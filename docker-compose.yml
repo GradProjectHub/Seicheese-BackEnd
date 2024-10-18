@@ -1,0 +1,49 @@
+services:
+  go:
+    image: seicheese:go
+    container_name: go
+    ports:
+      - "1300:1300"
+    volumes:
+      - ./src:/home/user/go/src/app
+    tty: true
+    # command: air -c .air.toml
+    depends_on:
+      - db
+    networks:
+      net:
+        ipv4_address: 20.0.0.2
+
+  db:
+    image: seicheese:db
+    container_name: seicheese-db
+    ports:
+      - "3312:3306"
+    volumes:
+      - db-data:/var/lib/mysql
+    networks:
+      net:
+        ipv4_address: 20.0.0.3
+
+  pma:
+    image: seicheese:admin
+    container_name: seicheese-admin
+    ports:
+      - "8880:80"
+    depends_on:
+      - db
+    networks:
+      net:
+        ipv4_address: 20.0.0.4
+
+networks:
+  net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 20.0.0.0/24
+          gateway: 20.0.0.1
+
+volumes:
+  db-data:
+    driver: local
