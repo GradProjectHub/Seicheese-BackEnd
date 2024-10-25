@@ -1,8 +1,8 @@
 -- +goose Up
 -- +goose StatementBegin
-CREATE TABLE users (
-    firebase_id VARCHAR(255) PRIMARY KEY,
-    is_admin BIT(1) NOT NULL DEFAULT 0,
+CREATE TABLE genres (
+    genre_id INT AUTO_INCREMENT PRIMARY KEY,
+    genre_name VARCHAR(255) NOT NULL UNIQUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
@@ -10,5 +10,5 @@ CREATE TABLE users (
 
 -- +goose Down
 -- +goose StatementBegin
-DROP TABLE users;
+DROP TABLE genres;
 -- +goose StatementEnd
