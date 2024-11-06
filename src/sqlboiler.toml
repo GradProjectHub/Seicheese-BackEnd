@@ -1,0 +1,19 @@
+[mysql]
+    dbname = "SeiCheese"
+    host = "db"
+    port = 3306
+    user = "root"
+    pass = "Wario-51"
+    sslmode = "false"
+
+[sqlboiler]
+    whitelist = [
+       "users",
+       "points",
+       "point_logs",
+       "places",
+       "genres",
+       "contents",
+       "seichies",
+       "checkin_logs",
+    ]
