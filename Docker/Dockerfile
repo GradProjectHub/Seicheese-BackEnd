@@ -34,6 +34,9 @@ RUN chown -R $USERNAME:$GROUPNAME /home/user/go
 # Air Install
 RUN go install github.com/air-verse/air@latest
 
+# Goose Install
+RUN go install github.com/pressly/goose/v3/cmd/goose@latest
+
 # PATH
 ENV PATH $PATH:${GOPATH}/bin
 
