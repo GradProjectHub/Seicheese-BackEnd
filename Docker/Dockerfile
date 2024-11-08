@@ -37,6 +37,12 @@ RUN go install github.com/air-verse/air@latest
 # Goose Install
 RUN go install github.com/pressly/goose/v3/cmd/goose@latest
 
+# SQLBoiler Install
+RUN go install github.com/volatiletech/sqlboiler/v4@latest
+
+# SQLBoiler MySQL Drivers Install
+RUN go install github.com/volatiletech/sqlboiler/v4/drivers/sqlboiler-mysql@latest
+
 # PATH
 ENV PATH $PATH:${GOPATH}/bin
 

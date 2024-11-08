@@ -1,0 +1,7 @@
+[mysql]
+    dbname = "SeiCheese"
+    host = "db"
+    port = 3306
+    user = "root"
+    pass = "Wario-51"
+    sslmode = "false"
