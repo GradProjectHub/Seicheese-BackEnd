@@ -1,0 +1,1 @@
+サービスアカウント -> Firebase Admin SDKのGoを選択 -> 新しい秘密鍵の生成
