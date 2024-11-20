@@ -10,16 +10,11 @@ import (
 	"seicheese/internal/infrastructure/database"
 	router "seicheese/internal/middleware/router"
 
-	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 )
 
 func main() {
-	// 環境変数の読み込み
-	if err := godotenv.Load(); err != nil {
-		log.Fatal("Error loading .env file")
-	}
 
 	e := echo.New()
 
