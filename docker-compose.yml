@@ -8,6 +8,14 @@ services:
       - ./src:/home/user/go/src/app
     tty: true
     # command: air -c .air.toml
+    environment:
+      - FIREBASE_PROJECT_ID=seichesse-202406
+      - FIREBASE_SDK_PATH=/home/user/go/src/app/configs/Seichesse Firebase Admin SDK 2024.json
+      - DB_USER=root
+      - DB_PASS=Wario-51
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_NAME=SeiCheese
     depends_on:
       - db
     networks:
@@ -43,6 +51,7 @@ networks:
       config:
         - subnet: 20.0.0.0/24
           gateway: 20.0.0.1
+        
 
 volumes:
   db-data:
