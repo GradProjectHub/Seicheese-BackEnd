@@ -30,7 +30,7 @@ func NewDBConfig() *DBConfig {
 
 // InitializeDB はデータベース接続を初期化
 func InitializeDB(config *DBConfig) (*sql.DB, error) {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true",
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true&loc=Asia%%2FTokyo",
 		config.User,
 		config.Password,
 		config.Host,
