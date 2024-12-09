@@ -50,8 +50,23 @@ func main() {
 		AuthClient: authClient,
 	}
 
+	genreHandler := &handler.GenreHandler{
+		DB: db,
+	}
+
+	seichiHandler := &handler.SeichiHandler{
+		DB: db,
+	}
+
+	contentHandler := &handler.ContentHandler{
+		DB: db,
+	}
+
 	// ルーターの登録
 	router.RegisterAuthRoutes(e, authClient, authHandler)
+	router.RegisterGenreRoutes(e, genreHandler)
+	router.RegisterSeichiRoutes(e, seichiHandler, authClient)
+	router.RegisterContentRoutes(e, contentHandler, authClient)
 
 	// サーバー起動
 	port := os.Getenv("PORT")
