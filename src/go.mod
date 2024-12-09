@@ -4,10 +4,11 @@ go 1.23.2
 
 require (
 	firebase.google.com/go/v4 v4.15.0
+	github.com/ericlagergren/decimal v0.0.0-20190420051523-6335edbaa640
 	github.com/friendsofgo/errors v0.9.2
 	github.com/go-sql-driver/mysql v1.8.1
-	github.com/joho/godotenv v1.5.1
 	github.com/labstack/echo/v4 v4.12.0
+	github.com/volatiletech/null v8.0.0+incompatible
 	github.com/volatiletech/null/v8 v8.1.2
 	github.com/volatiletech/sqlboiler/v4 v4.17.1
 	github.com/volatiletech/strmangle v0.0.8
@@ -25,7 +26,6 @@ require (
 	cloud.google.com/go/storage v1.43.0 // indirect
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/MicahParks/keyfunc v1.9.0 // indirect
-	github.com/ericlagergren/decimal v0.0.0-20190420051523-6335edbaa640 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -47,6 +47,7 @@ require (
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/volatiletech/inflect v0.0.1 // indirect
 	github.com/volatiletech/randomize v0.0.1 // indirect
+	github.com/volatiletech/sqlboiler v3.7.1+incompatible // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.54.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.54.0 // indirect
