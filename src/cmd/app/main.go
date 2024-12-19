@@ -20,9 +20,17 @@ func main() {
 
 	// CORS設定
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins: []string{"*"},
+		AllowOrigins: []string{
+			"https://seicheese.jp",
+			"https://www.seicheese.jp",
+		},
 		AllowMethods: []string{http.MethodGet, http.MethodPost},
-		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization},
+		AllowHeaders: []string{
+			echo.HeaderOrigin,
+			echo.HeaderContentType,
+			echo.HeaderAccept,
+			echo.HeaderAuthorization,
+		},
 	}))
 
 	// Firebaseの初期化
