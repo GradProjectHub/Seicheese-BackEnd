@@ -1,9 +1,25 @@
 services:
+  nginx:
+    image: nginx:alpine
+    container_name: seicheese-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/ssl:/etc/nginx/ssl
+      - ./nginx/logs:/var/log/nginx
+    depends_on:
+      - go
+    networks:
+      net:
+        ipv4_address: 20.0.0.5
+
   go:
     image: seicheese:go
     container_name: go
-    ports:
-      - "1300:1300"
+    expose:
+      - "1300"
     volumes:
       - ./src:/home/user/go/src/app
     tty: true
