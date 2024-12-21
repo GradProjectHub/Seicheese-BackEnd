@@ -17,4 +17,13 @@ groups:
       severity: warning
     annotations:
       summary: High memory usage detected
-      description: Memory usage is above 90% for 5 minutes 
+      description: Memory usage is above 90% for 5 minutes
+
+  - alert: DatabaseConnections
+    expr: mysql_global_status_threads_connected > 100
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: High number of database connections
+      description: More than 100 database connections for 5 minutes

@@ -1,12 +1,21 @@
 #!/bin/bash
 
+# 環境変数の読み込み
+source /etc/seicheese/backup.env
+
 # バックアップ設定
-BACKUP_DIR="/backup/seicheese"
+BACKUP_DIR="${BACKUP_ROOT_DIR:-/backup/seicheese}"
 DATE=$(date +%Y%m%d_%H%M%S)
-MYSQL_USER="root"
-MYSQL_PASSWORD="Wario-51"
-MYSQL_DATABASE="SeiCheese"
-RETENTION_DAYS=30
+MYSQL_USER="${DB_USER}"
+MYSQL_PASSWORD="${DB_PASSWORD}"
+MYSQL_DATABASE="${DB_NAME}"
+RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
+
+# 環境変数チェック
+if [ -z "$DB_USER" ] || [ -z "$DB_PASSWORD" ] || [ -z "$DB_NAME" ]; then
+    echo "Error: Required environment variables are not set"
+    exit 1
+fi
 
 # バックアップディレクトリの作成
 mkdir -p "${BACKUP_DIR}/database"

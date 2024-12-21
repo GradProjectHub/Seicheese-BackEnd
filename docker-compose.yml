@@ -73,8 +73,6 @@ services:
     container_name: seicheese-grafana
     volumes:
       - grafana_data:/var/lib/grafana
-    ports:
-      - "3000:3000"
     networks:
       net:
         ipv4_address: 20.0.0.7
