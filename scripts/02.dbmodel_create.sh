@@ -2,6 +2,11 @@
 
 set -e
 
+docker compose exec -u root go bash -c "\
+mkdir -p /home/user/go/src/app/models && \
+chown -R user:user /home/user/go/src/app/models && \
+chmod -R 755 /home/user/go/src/app/models"
+
 # データベースの接続情報 (docker-compose.ymlと一致させる)
 DB_USER="root"
 DB_PASS="Wario-51"
@@ -21,7 +26,7 @@ docker compose exec go bash -c "goose -dir ${MIGRATIONS_DIR} mysql \"${DB_USER}:
 
 echo "Migrations complete. Generating code..."
 
-# sqlboilerを実行
-docker compose exec go sqlboiler mysql --wipe --no-tests
+# sqlboilerを実行（rootユーザーで実行）
+docker compose exec -u root go sqlboiler mysql --wipe --no-tests
 
 echo "Code generation complete."

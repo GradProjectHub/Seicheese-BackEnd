@@ -1,7 +1,7 @@
 #!/bin/bash
 
-example_path=${PWD}/src/.env.example
-env_path=${PWD}/src/.env
+example_path=${PWD}/.env.example
+env_path=${PWD}/.env
 
 # 判定
 if [ ! -e $example_path ]; then
