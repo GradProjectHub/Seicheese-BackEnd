@@ -24,7 +24,7 @@ services:
     volumes:
       - ./src:/home/user/go/src/app
     tty: true
-    # command: air -c .air.toml
+    command: air -c .air.toml
     env_file:
       - .env
     depends_on:
