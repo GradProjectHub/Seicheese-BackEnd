@@ -15,12 +15,12 @@ RUN groupadd -g $GID $GROUPNAME && useradd -m -s /bin/bash  -u $UID -g $GID $USE
 # Set Home Environment
 ENV HOME /home/${USERNAME}
 
-# Change User
-USER $USERNAME
-
 # Set GOPATH
 ENV GOPATH ${HOME}/go
 
+# ディレクトリを作成し、権限を設定
+RUN mkdir -p ${GOPATH}/pkg && \
+    chown -R ${USERNAME}:${GROUPNAME} ${HOME}
 
 # Go-dev
 FROM go-base AS go-dev
