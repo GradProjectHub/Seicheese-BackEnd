@@ -70,8 +70,19 @@ services:
         ipv4_address: 20.0.0.6
 
   grafana:
-    image: grafana/grafana
-    container_name: seicheese-grafana
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: always
+    environment:
+      - GF_SERVER_DOMAIN=api.seicheese.jp
+      - GF_SERVER_ROOT_URL=https://api.seicheese.jp
+      - GF_LOG_LEVEL=debug
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_SECURITY_COOKIE_SECURE=true
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=jumboebi
+      - GF_AUTH_BASIC_ENABLED=true
     volumes:
       - grafana_data:/var/lib/grafana
     networks:
@@ -92,3 +103,4 @@ volumes:
     driver: local
   prometheus_data:
   grafana_data:
+  grafana-storage:
