@@ -47,78 +47,32 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 	).One(c.Request().Context(), h.DB)
 
 	if err == sql.ErrNoRows {
-		return echo.NewHTTPError(http.StatusNotFound, map[string]interface{}{
-			"message": "ユーザーが見つかりません。サインアップしてください。",
-			"code":    "USER_NOT_FOUND",
-		})
-	}
+		// ユーザーが存在しない場合は新規登録を行う
+		newUser := models.User{
+			FirebaseID: verifiedToken.UID,
+			Email:      verifiedToken.Claims["email"].(string),
+			CreatedAt:  time.Now(),
+			UpdatedAt:  time.Now(),
+		}
 
-	if err != nil {
+		// ユーザーを保存
+		err = newUser.Insert(c.Request().Context(), h.DB, boil.Infer())
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "ユーザーの登録に失敗しました")
+		}
+
+		return c.JSON(http.StatusCreated, map[string]interface{}{
+			"message": "ユーザーを新規登録しました",
+			"user":    newUser,
+		})
+	} else if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "データベースエラー")
 	}
 
+	// 既存ユーザーの場合は通常のサインイン処理
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"message": "認証成功",
+		"message": "サインインに成功しました",
 		"user":    user,
-	})
-}
-
-// SignUp handler
-func (h *AuthHandler) SignUp(c echo.Context) error {
-	// トークンの取得と検証
-	authHeader := c.Request().Header.Get("Authorization")
-	if authHeader == "" {
-		return echo.NewHTTPError(http.StatusUnauthorized, "トークンが必要です")
-	}
-	token := strings.TrimPrefix(authHeader, "Bearer ")
-
-	verifiedToken, err := h.AuthClient.VerifyIDToken(c.Request().Context(), token)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusUnauthorized, "無効なトークンです")
-	}
-
-	// 既存ユーザーの確認
-	existingUser, err := models.Users(
-		qm.Where("firebase_id = ?", verifiedToken.UID),
-	).One(c.Request().Context(), h.DB)
-
-	if err != nil && err != sql.ErrNoRows {
-		return echo.NewHTTPError(http.StatusInternalServerError, "データベースエラー")
-	}
-
-	if existingUser != nil {
-		return echo.NewHTTPError(http.StatusConflict, map[string]interface{}{
-			"message": "既に登録済みのユーザーです。サインインしてください。",
-			"code":    "USER_EXISTS",
-		})
-	}
-
-	// バージョン検証
-	var req struct {
-		Version string `json:"version"`
-	}
-	if err := c.Bind(&req); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "バージョン情報が必要です")
-	}
-
-	if !utils.IsValidAppVersion(req.Version) {
-		return echo.NewHTTPError(http.StatusBadRequest, "サポートされていないバージョンです")
-	}
-
-	// 新規ユーザーの作成
-	newUser := &models.User{
-		FirebaseID: verifiedToken.UID,
-		CreatedAt:  null.TimeFrom(time.Now()),
-		UpdatedAt:  null.TimeFrom(time.Now()),
-	}
-
-	if err := newUser.Insert(c.Request().Context(), h.DB, boil.Infer()); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー登録に失敗しました")
-	}
-
-	return c.JSON(http.StatusCreated, map[string]interface{}{
-		"message": "ユーザー登録成功",
-		"user":    newUser,
 	})
 }
 
