@@ -48,11 +48,11 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 
 	if err == sql.ErrNoRows {
 		// ユーザーが存在しない場合は新規登録を行う
+		now := time.Now()
 		newUser := models.User{
 			FirebaseID: verifiedToken.UID,
-			Email:      verifiedToken.Claims["email"].(string),
-			CreatedAt:  time.Now(),
-			UpdatedAt:  time.Now(),
+			CreatedAt:  null.TimeFrom(now),
+			UpdatedAt:  null.TimeFrom(now),
 		}
 
 		// ユーザーを保存
