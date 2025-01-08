@@ -26,5 +26,4 @@ func RegisterAuthRoutes(e *echo.Echo, authClient *auth.Client, authHandler *hand
 	authGroup.Use(middleware.FirebaseAuthMiddleware(authClient))
 	// ハンドラーの割り当て
 	authGroup.POST("/auth/signin", authHandler.SignIn)
-	authGroup.POST("/auth/signup", authHandler.SignUp)
 }
