@@ -27,7 +27,7 @@ func NewAuthRouter(e *echo.Echo, db *sql.DB) {
 	case "development":
 		credentialsFile = "configs/firebase-admin-dev.json"
 	case "production":
-		credentialsFile = "configs/firebase-admin-prod.json"
+		credentialsFile = "configs/firebase-admin-prd.json"
 	default:
 		credentialsFile = "configs/firebase-admin-dev.json"
 	}
