@@ -17,6 +17,11 @@ func InitializeFirebaseApp() (*firebase.App, error) {
 	if credPath == "" {
 		return nil, fmt.Errorf("FIREBASE_SDK_PATHの環境変数が設定されていません")
 	}
+
+	if _, err := os.Stat(credPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("firebase credentials file not found at: %s", credPath)
+	}
+
 	opt := option.WithCredentialsFile(credPath)
 
 	app, err := firebase.NewApp(ctx, nil, opt)
