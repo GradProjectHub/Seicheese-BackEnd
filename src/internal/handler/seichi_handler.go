@@ -349,3 +349,38 @@ func getAddressFromCoordinates(lat, lng float64) (map[string]string, error) {
 		"postalCode": postalCode,
 	}, nil
 }
+
+// SearchSeichis handles the search endpoint
+func (h *SeichiHandler) SearchSeichis(c echo.Context) error {
+	query := c.QueryParam("q")
+	if query == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "検索クエリが必要です"})
+	}
+
+	ctx := c.Request().Context()
+
+	// SQLBoilerのクエリビルダーを使用
+	seichis, err := models.Seichies(
+		qm.Load("Content"),
+		qm.Load("Content.Genre"),
+		qm.Where(
+			"seichi_name LIKE ? OR "+
+				"address LIKE ? OR "+
+				"postal_code LIKE ? OR "+
+				"EXISTS (SELECT 1 FROM contents WHERE contents.id = seichis.content_id AND contents.name LIKE ?) OR "+
+				"EXISTS (SELECT 1 FROM contents c JOIN genres g ON c.genre_id = g.id WHERE c.id = seichis.content_id AND g.name LIKE ?)",
+			"%"+query+"%",
+			"%"+query+"%",
+			"%"+query+"%",
+			"%"+query+"%",
+			"%"+query+"%",
+		),
+		qm.OrderBy("seichis.created_at DESC"),
+	).All(ctx, h.DB)
+
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "検索中にエラーが発生しました"})
+	}
+
+	return c.JSON(http.StatusOK, seichis)
+}

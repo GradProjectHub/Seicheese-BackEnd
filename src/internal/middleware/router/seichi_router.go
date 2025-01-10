@@ -14,4 +14,5 @@ func RegisterSeichiRoutes(e *echo.Echo, seichiHandler *handler.SeichiHandler, au
 
 	seichiGroup.POST("/register", seichiHandler.RegisterSeichi)
 	seichiGroup.GET("/list", seichiHandler.GetSeichies)
+	seichiGroup.GET("/search", seichiHandler.SearchSeichis)
 }
