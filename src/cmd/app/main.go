@@ -72,7 +72,7 @@ func main() {
 
 	// ルーターの登録
 	router.RegisterAuthRoutes(e, authClient, authHandler)
-	router.RegisterGenreRoutes(e, genreHandler)
+	router.RegisterGenreRoutes(e, genreHandler, authClient)
 	router.RegisterSeichiRoutes(e, seichiHandler, authClient)
 	router.RegisterContentRoutes(e, contentHandler, authClient)
 
