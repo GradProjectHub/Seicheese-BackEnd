@@ -95,17 +95,40 @@ func (h *SeichiHandler) RegisterSeichi(c echo.Context) error {
 
 	// Firebase UIDからユーザーIDを取得
 	uid := c.Get("uid").(string)
+	log.Printf("Attempting to fetch user with Firebase UID: %s", uid)
+	
 	user, err := models.Users(
 		models.UserWhere.FirebaseID.EQ(uid),
 	).One(c.Request().Context(), h.DB)
+	
 	if err != nil {
-		log.Printf("Error fetching user: %v", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "ユーザー情報の取得に失敗しました",
-		})
+		if err == sql.ErrNoRows {
+			log.Printf("No user found with Firebase UID: %s", uid)
+			// ユーザーが存在しない場合は新規登録を試みる
+			now := time.Now()
+			newUser := &models.User{
+				FirebaseID: uid,
+				CreatedAt:  null.TimeFrom(now),
+				UpdatedAt:  null.TimeFrom(now),
+			}
+			
+			if err := newUser.Insert(c.Request().Context(), h.DB, boil.Infer()); err != nil {
+				log.Printf("Failed to create new user: %v", err)
+				return c.JSON(http.StatusInternalServerError, map[string]string{
+					"error": "ユーザーの登録に失敗しました",
+				})
+			}
+			log.Printf("Created new user: %+v", newUser)
+			user = newUser
+		} else {
+			log.Printf("Error fetching user: %v", err)
+			return c.JSON(http.StatusInternalServerError, map[string]string{
+				"error": "ユーザー情報の取得に失敗しました",
+			})
+		}
 	}
 
-	log.Printf("Fetched user: %v", user)
+	log.Printf("Using user: %+v", user)
 
 	// 住所情報を取得
 	addressData, err := getAddressFromCoordinates(req.Latitude, req.Longitude)
@@ -399,19 +422,12 @@ func (h *SeichiHandler) SearchSeichis(c echo.Context) error {
 
 	ctx := c.Request().Context()
 
-	// SQLBoilerのクエリビルダーを使用
 	seichis, err := models.Seichies(
 		qm.Load("Content"),
-		qm.Load("Content.Genre"),
+		qm.Load("Place"),
 		qm.Where(
 			"seichi_name LIKE ? OR "+
-				"address LIKE ? OR "+
-				"postal_code LIKE ? OR "+
-				"EXISTS (SELECT 1 FROM contents WHERE contents.id = seichis.content_id AND contents.name LIKE ?) OR "+
-				"EXISTS (SELECT 1 FROM contents c JOIN genres g ON c.genre_id = g.id WHERE c.id = seichis.content_id AND g.name LIKE ?)",
-			"%"+query+"%",
-			"%"+query+"%",
-			"%"+query+"%",
+				"EXISTS (SELECT 1 FROM contents WHERE contents.id = seichis.content_id AND contents.name LIKE ?)",
 			"%"+query+"%",
 			"%"+query+"%",
 		),
@@ -419,8 +435,41 @@ func (h *SeichiHandler) SearchSeichis(c echo.Context) error {
 	).All(ctx, h.DB)
 
 	if err != nil {
+		log.Printf("Search error: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "検索中にエラーが発生しました"})
 	}
 
-	return c.JSON(http.StatusOK, seichis)
+	var response []map[string]interface{}
+	for _, s := range seichis {
+		contentName := ""
+		if s.R != nil && s.R.Content != nil {
+			contentName = s.R.Content.ContentName
+		}
+
+		address := ""
+		postalCode := ""
+		if s.R != nil && s.R.Place != nil {
+			address = s.R.Place.Address
+			postalCode = s.R.Place.ZipCode
+		}
+
+		latitude, _ := s.Latitude.Float64()
+		longitude, _ := s.Longitude.Float64()
+
+		response = append(response, map[string]interface{}{
+			"id":           s.SeichiID,
+			"name":         s.SeichiName,
+			"description":  s.Comment.String,
+			"latitude":     latitude,
+			"longitude":    longitude,
+			"content_id":   s.ContentID,
+			"content_name": contentName,
+			"address":      address,
+			"postal_code":  postalCode,
+			"created_at":   s.CreatedAt.Time.Format(time.RFC3339),
+			"updated_at":   s.UpdatedAt.Time.Format(time.RFC3339),
+		})
+	}
+
+	return c.JSON(http.StatusOK, response)
 }
