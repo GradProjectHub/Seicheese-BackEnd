@@ -434,7 +434,8 @@ func (h *SeichiHandler) SearchSeichis(c echo.Context) error {
 	seichis, err := models.Seichies(
 		qm.Load("Content"),
 		qm.Load("Place"),
-		qm.InnerJoin("contents c on c.id = seichies.content_id"),
+		qm.LeftOuterJoin("contents c on c.id = seichies.content_id"),
+		qm.LeftOuterJoin("places p on p.id = seichies.place_id"),
 		qm.Where("seichies.seichi_name LIKE ? OR c.content_name LIKE ?", 
 			"%"+query+"%", "%"+query+"%"),
 		qm.OrderBy("seichies.created_at DESC"),
@@ -443,8 +444,10 @@ func (h *SeichiHandler) SearchSeichis(c echo.Context) error {
 	if err != nil {
 		log.Printf("Search error: %v", err)
 		if err == sql.ErrNoRows {
+			log.Printf("No results found for query: %s", query)
 			return c.JSON(http.StatusOK, []map[string]interface{}{})
 		}
+		log.Printf("Database error during search: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "検索中にエラーが発生しました"})
 	}
 
@@ -458,7 +461,6 @@ func (h *SeichiHandler) SearchSeichis(c echo.Context) error {
 			log.Printf("Seichi %d has content: %s", s.SeichiID, contentName)
 		} else {
 			log.Printf("Warning: Seichi %d has no content information", s.SeichiID)
-			continue
 		}
 
 		address := ""
@@ -467,6 +469,8 @@ func (h *SeichiHandler) SearchSeichis(c echo.Context) error {
 			address = s.R.Place.Address
 			postalCode = s.R.Place.ZipCode
 			log.Printf("Seichi %d has place: %s, %s", s.SeichiID, address, postalCode)
+		} else {
+			log.Printf("Warning: Seichi %d has no place information", s.SeichiID)
 		}
 
 		latitude, err := s.Latitude.Float64()
