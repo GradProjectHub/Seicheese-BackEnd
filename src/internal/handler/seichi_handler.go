@@ -418,6 +418,10 @@ func (h *SeichiHandler) SearchSeichis(c echo.Context) error {
 	query := c.QueryParam("q")
 	log.Printf("Received search query: %s", query)
 	
+	// Firebase UIDからユーザーIDを取得
+	uid := c.Get("uid").(string)
+	log.Printf("Firebase UID for search request: %s", uid)
+	
 	if query == "" {
 		log.Printf("Empty search query received")
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "検索クエリが必要です"})
