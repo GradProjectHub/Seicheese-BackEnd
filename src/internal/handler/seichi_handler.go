@@ -430,7 +430,7 @@ func (h *SeichiHandler) SearchSeichis(c echo.Context) error {
 	ctx := c.Request().Context()
 	log.Printf("Executing search with query: %s", query)
 
-	// クエリを改善: 聖地名とコンテンツ名の両方で検索
+	// SQLBoilerを使用してクエリを構築
 	seichis, err := models.Seichies(
 		qm.Load("Content"),
 		qm.Load("Place"),
@@ -443,7 +443,6 @@ func (h *SeichiHandler) SearchSeichis(c echo.Context) error {
 	if err != nil {
 		log.Printf("Search error: %v", err)
 		if err == sql.ErrNoRows {
-			// 検索結果が0件の場合は空配列を返す
 			return c.JSON(http.StatusOK, []map[string]interface{}{})
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "検索中にエラーが発生しました"})
@@ -459,7 +458,7 @@ func (h *SeichiHandler) SearchSeichis(c echo.Context) error {
 			log.Printf("Seichi %d has content: %s", s.SeichiID, contentName)
 		} else {
 			log.Printf("Warning: Seichi %d has no content information", s.SeichiID)
-			continue // コンテンツ情報がない場合はスキップ
+			continue
 		}
 
 		address := ""
@@ -468,8 +467,6 @@ func (h *SeichiHandler) SearchSeichis(c echo.Context) error {
 			address = s.R.Place.Address
 			postalCode = s.R.Place.ZipCode
 			log.Printf("Seichi %d has place: %s, %s", s.SeichiID, address, postalCode)
-		} else {
-			log.Printf("Warning: Seichi %d has no place information", s.SeichiID)
 		}
 
 		latitude, err := s.Latitude.Float64()
