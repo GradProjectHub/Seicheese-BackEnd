@@ -38,8 +38,10 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 	// トークン検証
 	verifiedToken, err := h.AuthClient.VerifyIDToken(c.Request().Context(), token)
 	if err != nil {
+		log.Printf("Token verification failed: %v", err)
 		return echo.NewHTTPError(http.StatusUnauthorized, "無効なトークンです")
 	}
+	log.Printf("Token verified for UID: %s", verifiedToken.UID)
 
 	// ユーザーの存在確認
 	user, err := models.Users(
@@ -47,6 +49,7 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 	).One(c.Request().Context(), h.DB)
 
 	if err == sql.ErrNoRows {
+		log.Printf("User not found for UID: %s, creating new user", verifiedToken.UID)
 		// ユーザーが存在しない場合は新規登録を行う
 		now := time.Now()
 		newUser := models.User{
@@ -58,17 +61,21 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 		// ユーザーを保存
 		err = newUser.Insert(c.Request().Context(), h.DB, boil.Infer())
 		if err != nil {
+			log.Printf("Failed to insert new user: %v", err)
 			return echo.NewHTTPError(http.StatusInternalServerError, "ユーザーの登録に失敗しました")
 		}
+		log.Printf("New user created successfully: %+v", newUser)
 
 		return c.JSON(http.StatusCreated, map[string]interface{}{
 			"message": "ユーザーを新規登録しました",
 			"user":    newUser,
 		})
 	} else if err != nil {
+		log.Printf("Database error while looking up user: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "データベースエラー")
 	}
 
+	log.Printf("Existing user found: %+v", user)
 	// 既存ユーザーの場合は通常のサインイン処理
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"message": "サインインに成功しました",
