@@ -305,7 +305,7 @@ func (h *SeichiHandler) getClusteredSeichies(ctx context.Context, bounds string)
 
 func getAddressFromCoordinates(lat, lng float64) (map[string]string, error) {
 	url := fmt.Sprintf(
-		"https://maps.googleapis.com/maps/api/geocode/json?latlng=%f,%f&key=%s&language=ja",
+		"https://maps.googleapis.com/maps/api/geocode/json?latlng=%f,%f&key=%s&language=ja&result_type=postal_code|administrative_area_level_1|locality|sublocality|street_number",
 		lat, lng, os.Getenv("GOOGLE_MAPS_API_KEY"),
 	)
 
@@ -317,12 +317,12 @@ func getAddressFromCoordinates(lat, lng float64) (map[string]string, error) {
 
 	var result struct {
 		Results []struct {
-			FormattedAddress  string `json:"formatted_address"`
 			AddressComponents []struct {
-				Types    []string `json:"types"`
 				LongName string   `json:"long_name"`
+				Types    []string `json:"types"`
 			} `json:"address_components"`
 		} `json:"results"`
+		Status string `json:"status"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -333,20 +333,60 @@ func getAddressFromCoordinates(lat, lng float64) (map[string]string, error) {
 		return nil, fmt.Errorf("no results found")
 	}
 
-	// 郵便番号を探す
-	var postalCode string
+	var (
+		prefecture string
+		city      string
+		district  string
+		street    string
+		number    string
+		postal    string
+	)
+
+	// 住所コンポーネントを解析
 	for _, component := range result.Results[0].AddressComponents {
 		for _, type_ := range component.Types {
-			if type_ == "postal_code" {
-				postalCode = component.LongName
-				break
+			switch type_ {
+			case "postal_code":
+				postal = component.LongName
+			case "administrative_area_level_1":
+				prefecture = component.LongName
+			case "locality":
+				city = component.LongName
+			case "sublocality_level_1":
+				district = component.LongName
+			case "sublocality_level_2":
+				if street == "" {
+					street = component.LongName
+				}
+			case "street_number":
+				number = component.LongName
 			}
 		}
 	}
 
+	// 住所を組み立て
+	var addressParts []string
+	if prefecture != "" {
+		addressParts = append(addressParts, prefecture)
+	}
+	if city != "" {
+		addressParts = append(addressParts, city)
+	}
+	if district != "" {
+		addressParts = append(addressParts, district)
+	}
+	if street != "" {
+		addressParts = append(addressParts, street)
+	}
+	if number != "" {
+		addressParts = append(addressParts, number)
+	}
+
+	address := strings.Join(addressParts, "")
+
 	return map[string]string{
-		"address":    result.Results[0].FormattedAddress,
-		"postalCode": postalCode,
+		"address":    address,
+		"postalCode": postal,
 	}, nil
 }
 
