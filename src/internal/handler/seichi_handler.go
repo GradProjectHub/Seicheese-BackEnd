@@ -430,16 +430,22 @@ func (h *SeichiHandler) SearchSeichis(c echo.Context) error {
 	ctx := c.Request().Context()
 	log.Printf("Executing search with query: %s", query)
 
-	// より単純なクエリを使用
+	// クエリを改善: 聖地名とコンテンツ名の両方で検索
 	seichis, err := models.Seichies(
 		qm.Load("Content"),
 		qm.Load("Place"),
-		qm.Where("seichi_name LIKE ?", "%"+query+"%"),
-		qm.OrderBy("created_at DESC"),
+		qm.InnerJoin("contents c on c.id = seichies.content_id"),
+		qm.Where("seichies.seichi_name LIKE ? OR c.content_name LIKE ?", 
+			"%"+query+"%", "%"+query+"%"),
+		qm.OrderBy("seichies.created_at DESC"),
 	).All(ctx, h.DB)
 
 	if err != nil {
 		log.Printf("Search error: %v", err)
+		if err == sql.ErrNoRows {
+			// 検索結果が0件の場合は空配列を返す
+			return c.JSON(http.StatusOK, []map[string]interface{}{})
+		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "検索中にエラーが発生しました"})
 	}
 
@@ -452,7 +458,8 @@ func (h *SeichiHandler) SearchSeichis(c echo.Context) error {
 			contentName = s.R.Content.ContentName
 			log.Printf("Seichi %d has content: %s", s.SeichiID, contentName)
 		} else {
-			log.Printf("Seichi %d has no content information", s.SeichiID)
+			log.Printf("Warning: Seichi %d has no content information", s.SeichiID)
+			continue // コンテンツ情報がない場合はスキップ
 		}
 
 		address := ""
@@ -462,11 +469,20 @@ func (h *SeichiHandler) SearchSeichis(c echo.Context) error {
 			postalCode = s.R.Place.ZipCode
 			log.Printf("Seichi %d has place: %s, %s", s.SeichiID, address, postalCode)
 		} else {
-			log.Printf("Seichi %d has no place information", s.SeichiID)
+			log.Printf("Warning: Seichi %d has no place information", s.SeichiID)
 		}
 
-		latitude, _ := s.Latitude.Float64()
-		longitude, _ := s.Longitude.Float64()
+		latitude, err := s.Latitude.Float64()
+		if err != nil {
+			log.Printf("Error converting latitude for seichi %d: %v", s.SeichiID, err)
+			continue
+		}
+
+		longitude, err := s.Longitude.Float64()
+		if err != nil {
+			log.Printf("Error converting longitude for seichi %d: %v", s.SeichiID, err)
+			continue
+		}
 
 		responseItem := map[string]interface{}{
 			"id":           s.SeichiID,
