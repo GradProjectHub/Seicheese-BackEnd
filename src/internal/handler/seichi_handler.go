@@ -416,11 +416,19 @@ func getAddressFromCoordinates(lat, lng float64) (map[string]string, error) {
 // SearchSeichis handles the search endpoint
 func (h *SeichiHandler) SearchSeichis(c echo.Context) error {
 	query := c.QueryParam("q")
+	log.Printf("Received search query: %s", query)
+	
 	if query == "" {
+		log.Printf("Empty search query received")
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "検索クエリが必要です"})
 	}
 
 	ctx := c.Request().Context()
+	log.Printf("Executing search with query: %s", query)
+
+	// Firebase UIDの取得とログ出力
+	uid := c.Get("uid")
+	log.Printf("User Firebase UID: %v", uid)
 
 	seichis, err := models.Seichies(
 		qm.Load("Content"),
@@ -439,11 +447,16 @@ func (h *SeichiHandler) SearchSeichis(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "検索中にエラーが発生しました"})
 	}
 
+	log.Printf("Found %d seichis matching query", len(seichis))
+
 	var response []map[string]interface{}
 	for _, s := range seichis {
 		contentName := ""
 		if s.R != nil && s.R.Content != nil {
 			contentName = s.R.Content.ContentName
+			log.Printf("Seichi %d has content: %s", s.SeichiID, contentName)
+		} else {
+			log.Printf("Seichi %d has no content information", s.SeichiID)
 		}
 
 		address := ""
@@ -451,6 +464,9 @@ func (h *SeichiHandler) SearchSeichis(c echo.Context) error {
 		if s.R != nil && s.R.Place != nil {
 			address = s.R.Place.Address
 			postalCode = s.R.Place.ZipCode
+			log.Printf("Seichi %d has place: %s, %s", s.SeichiID, address, postalCode)
+		} else {
+			log.Printf("Seichi %d has no place information", s.SeichiID)
 		}
 
 		latitude, _ := s.Latitude.Float64()
@@ -471,5 +487,6 @@ func (h *SeichiHandler) SearchSeichis(c echo.Context) error {
 		})
 	}
 
+	log.Printf("Returning %d search results", len(response))
 	return c.JSON(http.StatusOK, response)
 }
