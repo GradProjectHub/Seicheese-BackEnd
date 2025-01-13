@@ -430,28 +430,12 @@ func (h *SeichiHandler) SearchSeichis(c echo.Context) error {
 	ctx := c.Request().Context()
 	log.Printf("Executing search with query: %s", query)
 
-	// デバッグ用のSQLクエリを構築
-	searchQuery := fmt.Sprintf(`
-		SELECT s.*, c.content_name, p.address, p.zip_code
-		FROM seichies s
-		LEFT JOIN contents c ON s.content_id = c.id
-		LEFT JOIN places p ON s.place_id = p.place_id
-		WHERE s.seichi_name LIKE '%%%s%%'
-		   OR c.content_name LIKE '%%%s%%'
-	`, query, query)
-	log.Printf("Debug - SQL Query: %s", searchQuery)
-
-	// 検索実行
+	// より単純なクエリを使用
 	seichis, err := models.Seichies(
 		qm.Load("Content"),
 		qm.Load("Place"),
-		qm.Where(
-			"seichies.seichi_name LIKE ? OR "+
-				"EXISTS (SELECT 1 FROM contents WHERE contents.id = seichies.content_id AND contents.content_name LIKE ?)",
-			"%"+query+"%",
-			"%"+query+"%",
-		),
-		qm.OrderBy("seichies.created_at DESC"),
+		qm.Where("seichi_name LIKE ?", "%"+query+"%"),
+		qm.OrderBy("created_at DESC"),
 	).All(ctx, h.DB)
 
 	if err != nil {
@@ -460,13 +444,6 @@ func (h *SeichiHandler) SearchSeichis(c echo.Context) error {
 	}
 
 	log.Printf("Found %d seichis matching query", len(seichis))
-
-	// 全ての聖地を取得して確認（デバッグ用）
-	allSeichis, _ := models.Seichies().All(ctx, h.DB)
-	log.Printf("Debug - Total seichis in database: %d", len(allSeichis))
-	for _, s := range allSeichis {
-		log.Printf("Debug - Existing seichi: ID=%d, Name=%s", s.SeichiID, s.SeichiName)
-	}
 
 	var response []map[string]interface{}
 	for _, s := range seichis {
