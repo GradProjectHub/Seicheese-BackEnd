@@ -96,14 +96,14 @@ func (h *SeichiHandler) RegisterSeichi(c echo.Context) error {
 	// Firebase UIDからユーザーIDを取得
 	uid := c.Get("uid").(string)
 	log.Printf("Attempting to fetch user with Firebase UID: %s", uid)
-	
+
 	user, err := models.Users(
 		models.UserWhere.FirebaseID.EQ(uid),
 	).One(c.Request().Context(), h.DB)
-	
+
 	if err != nil {
 		if err == sql.ErrNoRows {
-			log.Printf("No user found with Firebase UID: %s", uid)
+			log.Printf("No user found with Firebase UID: %s, creating new user", uid)
 			// ユーザーが存在しない場合は新規登録を試みる
 			now := time.Now()
 			newUser := &models.User{
@@ -111,7 +111,7 @@ func (h *SeichiHandler) RegisterSeichi(c echo.Context) error {
 				CreatedAt:  null.TimeFrom(now),
 				UpdatedAt:  null.TimeFrom(now),
 			}
-			
+
 			if err := newUser.Insert(c.Request().Context(), h.DB, boil.Infer()); err != nil {
 				log.Printf("Failed to create new user: %v", err)
 				return c.JSON(http.StatusInternalServerError, map[string]string{
@@ -126,6 +126,8 @@ func (h *SeichiHandler) RegisterSeichi(c echo.Context) error {
 				"error": "ユーザー情報の取得に失敗しました",
 			})
 		}
+	} else {
+		log.Printf("Found existing user: %+v", user)
 	}
 
 	log.Printf("Using user: %+v", user)
@@ -358,11 +360,11 @@ func getAddressFromCoordinates(lat, lng float64) (map[string]string, error) {
 
 	var (
 		prefecture string
-		city      string
-		district  string
-		street    string
-		number    string
-		postal    string
+		city       string
+		district   string
+		street     string
+		number     string
+		postal     string
 	)
 
 	// 住所コンポーネントを解析
@@ -413,95 +415,64 @@ func getAddressFromCoordinates(lat, lng float64) (map[string]string, error) {
 	}, nil
 }
 
-// SearchSeichis handles the search endpoint
-func (h *SeichiHandler) SearchSeichis(c echo.Context) error {
+// SearchSeichies は聖地を検索するハンドラー
+func (h *SeichiHandler) SearchSeichies(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	// クエリパラメータの取得
 	query := c.QueryParam("q")
-	log.Printf("Received search query: %s", query)
-	
-	// Firebase UIDからユーザーIDを取得
-	uid := c.Get("uid").(string)
-	log.Printf("Firebase UID for search request: %s", uid)
-	
 	if query == "" {
-		log.Printf("Empty search query received")
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "検索クエリが必要です"})
+		return echo.NewHTTPError(http.StatusBadRequest, "検索キーワードが必要です")
 	}
 
-	ctx := c.Request().Context()
-	log.Printf("Executing search with query: %s", query)
+	// SQLインジェクション対策のためにワイルドカードをエスケープ
+	query = strings.ReplaceAll(query, "%", "\\%")
+	query = strings.ReplaceAll(query, "_", "\\_")
+	searchPattern := "%" + query + "%"
 
-	// SQLBoilerを使用してクエリを構築
-	seichis, err := models.Seichies(
-		qm.Load("Content"),
-		qm.Load("Place"),
-		qm.LeftOuterJoin("contents c on c.id = seichies.content_id"),
-		qm.LeftOuterJoin("places p on p.id = seichies.place_id"),
-		qm.Where("seichies.seichi_name LIKE ? OR c.content_name LIKE ?", 
-			"%"+query+"%", "%"+query+"%"),
+	// JOINを使用して関連テーブルから必要な情報を取得
+	seichies, err := models.Seichies(
+		qm.Select(
+			"seichies.*",
+			"contents.content_name",
+			"places.address",
+			"places.zip_code",
+		),
+		qm.InnerJoin("contents on seichies.content_id = contents.content_id"),
+		qm.InnerJoin("places on seichies.place_id = places.place_id"),
+		qm.Where(
+			"seichies.seichi_name LIKE ? OR contents.content_name LIKE ? OR places.address LIKE ?",
+			searchPattern, searchPattern, searchPattern,
+		),
 		qm.OrderBy("seichies.created_at DESC"),
+		qm.Limit(50), // 結果数の制限
 	).All(ctx, h.DB)
 
 	if err != nil {
-		log.Printf("Search error: %v", err)
-		if err == sql.ErrNoRows {
-			log.Printf("No results found for query: %s", query)
-			return c.JSON(http.StatusOK, []map[string]interface{}{})
-		}
-		log.Printf("Database error during search: %v", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "検索中にエラーが発生しました"})
+		log.Printf("Failed to search seichies: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "聖地の検索に失敗しました")
 	}
 
-	log.Printf("Found %d seichis matching query", len(seichis))
+	// レスポンスの整形
+	response := make([]SeichiResponse, len(seichies))
+	for i, s := range seichies {
+		latitude, _ := s.Latitude.Float64()
+		longitude, _ := s.Longitude.Float64()
 
-	var response []map[string]interface{}
-	for _, s := range seichis {
-		contentName := ""
-		if s.R != nil && s.R.Content != nil {
-			contentName = s.R.Content.ContentName
-			log.Printf("Seichi %d has content: %s", s.SeichiID, contentName)
-		} else {
-			log.Printf("Warning: Seichi %d has no content information", s.SeichiID)
+		response[i] = SeichiResponse{
+			ID:          s.SeichiID,
+			Name:        s.SeichiName,
+			Description: s.Comment.String,
+			Latitude:    latitude,
+			Longitude:   longitude,
+			ContentID:   s.ContentID,
+			ContentName: s.R.Content.ContentName,
+			Address:     s.R.Place.Address,
+			PostalCode:  s.R.Place.ZipCode,
+			CreatedAt:   s.CreatedAt.Time,
+			UpdatedAt:   s.UpdatedAt.Time,
 		}
-
-		address := ""
-		postalCode := ""
-		if s.R != nil && s.R.Place != nil {
-			address = s.R.Place.Address
-			postalCode = s.R.Place.ZipCode
-			log.Printf("Seichi %d has place: %s, %s", s.SeichiID, address, postalCode)
-		} else {
-			log.Printf("Warning: Seichi %d has no place information", s.SeichiID)
-		}
-
-		latitude, err := s.Latitude.Float64()
-		if err != nil {
-			log.Printf("Error converting latitude for seichi %d: %v", s.SeichiID, err)
-			continue
-		}
-
-		longitude, err := s.Longitude.Float64()
-		if err != nil {
-			log.Printf("Error converting longitude for seichi %d: %v", s.SeichiID, err)
-			continue
-		}
-
-		responseItem := map[string]interface{}{
-			"id":           s.SeichiID,
-			"name":         s.SeichiName,
-			"description":  s.Comment.String,
-			"latitude":     latitude,
-			"longitude":    longitude,
-			"content_id":   s.ContentID,
-			"content_name": contentName,
-			"address":      address,
-			"postal_code":  postalCode,
-			"created_at":   s.CreatedAt.Time.Format(time.RFC3339),
-			"updated_at":   s.UpdatedAt.Time.Format(time.RFC3339),
-		}
-		log.Printf("Debug - Adding response item: %+v", responseItem)
-		response = append(response, responseItem)
 	}
 
-	log.Printf("Returning %d search results", len(response))
 	return c.JSON(http.StatusOK, response)
 }
