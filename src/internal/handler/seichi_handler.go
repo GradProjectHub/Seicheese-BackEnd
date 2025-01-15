@@ -417,7 +417,9 @@ func getAddressFromCoordinates(lat, lng float64) (map[string]string, error) {
 
 // SearchSeichies は聖地を検索するハンドラー
 func (h *SeichiHandler) SearchSeichies(c echo.Context) error {
-	ctx := c.Request().Context()
+	// コンテキストにタイムアウトを設定
+	ctx, cancel := context.WithTimeout(c.Request().Context(), 10*time.Second)
+	defer cancel()
 
 	// クエリパラメータの取得
 	query := c.QueryParam("q")
@@ -433,7 +435,7 @@ func (h *SeichiHandler) SearchSeichies(c echo.Context) error {
 	// JOINを使用して関連テーブルから必要な情報を取得
 	seichies, err := models.Seichies(
 		qm.Select(
-			"seichies.*",
+			"DISTINCT seichies.*", // 重複を除外
 			"contents.content_name",
 			"places.address",
 			"places.zip_code",
@@ -441,15 +443,15 @@ func (h *SeichiHandler) SearchSeichies(c echo.Context) error {
 		qm.InnerJoin("contents on seichies.content_id = contents.content_id"),
 		qm.InnerJoin("places on seichies.place_id = places.place_id"),
 		qm.Where(
-			"seichies.seichi_name LIKE ? OR contents.content_name LIKE ? OR places.address LIKE ?",
-			searchPattern, searchPattern, searchPattern,
+			"(seichies.seichi_name LIKE ? OR contents.content_name LIKE ? OR places.address LIKE ?) AND LENGTH(?) >= 2",
+			searchPattern, searchPattern, searchPattern, query,
 		),
 		qm.OrderBy("seichies.created_at DESC"),
-		qm.Limit(50), // 結果数の制限
+		qm.Limit(20), // 制限を50から20に変更
 	).All(ctx, h.DB)
 
 	if err != nil {
-		log.Printf("Failed to search seichies: %v", err)
+		log.Printf("Failed to search seichies: %v, query: %s", err, query)
 		return echo.NewHTTPError(http.StatusInternalServerError, "聖地の検索に失敗しました")
 	}
 
