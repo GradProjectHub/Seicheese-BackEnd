@@ -432,8 +432,10 @@ func (h *SeichiHandler) SearchSeichies(c echo.Context) error {
 	query = strings.ReplaceAll(query, "_", "\\_")
 	searchPattern := "%" + query + "%"
 
-	// JOINを使用して関連テーブルから必要な情報を取得
+	// Eager Loadingを使用して関連データを事前に読み込む
 	seichies, err := models.Seichies(
+		qm.Load("Content"), // 関連する作品データを事前読み込み
+		qm.Load("Place"),   // 関連する場所データを事前読み込み
 		qm.Select(
 			"DISTINCT seichies.*", // 重複を除外
 			"contents.content_name",
@@ -455,13 +457,18 @@ func (h *SeichiHandler) SearchSeichies(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "聖地の検索に失敗しました")
 	}
 
-	// レスポンスの整形
-	response := make([]SeichiResponse, len(seichies))
-	for i, s := range seichies {
+	response := make([]SeichiResponse, 0, len(seichies))
+	for _, s := range seichies {
+		// null checkを追加
+		if s.R == nil || s.R.Content == nil || s.R.Place == nil {
+			log.Printf("Warning: Skipping seichi %d due to missing related data", s.SeichiID)
+			continue
+		}
+
 		latitude, _ := s.Latitude.Float64()
 		longitude, _ := s.Longitude.Float64()
 
-		response[i] = SeichiResponse{
+		response = append(response, SeichiResponse{
 			ID:          s.SeichiID,
 			Name:        s.SeichiName,
 			Description: s.Comment.String,
@@ -473,7 +480,7 @@ func (h *SeichiHandler) SearchSeichies(c echo.Context) error {
 			PostalCode:  s.R.Place.ZipCode,
 			CreatedAt:   s.CreatedAt.Time,
 			UpdatedAt:   s.UpdatedAt.Time,
-		}
+		})
 	}
 
 	return c.JSON(http.StatusOK, response)
