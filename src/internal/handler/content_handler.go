@@ -24,22 +24,22 @@ func (h *ContentHandler) RegisterContent(c echo.Context) error {
 	}
 
 	if err := c.Bind(&req); err != nil {
-		log.Printf("Error binding request: %v", err)
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"error": "不正なリクエスト形式です",
-		})
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 
-	// デバッグログを追加
 	log.Printf("Received content name: %s", req.Name)
 	log.Printf("Received content genreId: %d", req.GenreID)
 
-	// コンテンツ名が空文字でないか確認
-	if req.Name == "" {
-		log.Printf("Content name is empty")
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"error": "コンテンツ名が空です",
-		})
+	// コンテンツ名の重複チェック
+	exists, err := models.Contents(
+		models.ContentWhere.ContentName.EQ(req.Name),
+	).Exists(c.Request().Context(), h.DB)
+	if err != nil {
+		log.Printf("Error checking content existence: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "コンテンツの確認に失敗しました")
+	}
+	if exists {
+		return echo.NewHTTPError(http.StatusConflict, "同じ名前のコンテンツが既に存在します")
 	}
 
 	content := models.Content{
