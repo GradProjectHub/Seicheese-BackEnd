@@ -330,7 +330,7 @@ func (h *SeichiHandler) getClusteredSeichies(ctx context.Context, bounds string)
 
 func getAddressFromCoordinates(lat, lng float64) (map[string]string, error) {
 	url := fmt.Sprintf(
-		"https://maps.googleapis.com/maps/api/geocode/json?latlng=%f,%f&key=%s&language=ja&result_type=postal_code|administrative_area_level_1|locality|sublocality|street_number",
+		"https://maps.googleapis.com/maps/api/geocode/json?latlng=%f,%f&key=%s&language=ja&result_type=postal_code|administrative_area_level_1|locality|sublocality|street_number|premise",
 		lat, lng, os.Getenv("GOOGLE_MAPS_API_KEY"),
 	)
 
@@ -385,6 +385,10 @@ func getAddressFromCoordinates(lat, lng float64) (map[string]string, error) {
 				}
 			case "street_number":
 				number = component.LongName
+			case "premise":
+				if number == "" {
+					number = component.LongName
+				}
 			}
 		}
 	}
