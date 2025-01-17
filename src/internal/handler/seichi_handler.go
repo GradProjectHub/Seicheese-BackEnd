@@ -32,6 +32,8 @@ type SeichiResponse struct {
 	Longitude   float64   `json:"longitude"`
 	ContentID   int       `json:"content_id"`
 	ContentName string    `json:"content_name"`
+	GenreID     int       `json:"genre_id"`
+	GenreName   string    `json:"genre_name"`
 	Address     string    `json:"address"`
 	PostalCode  string    `json:"postal_code"`
 	CreatedAt   time.Time `json:"created_at"`
@@ -469,22 +471,25 @@ func (h *SeichiHandler) SearchSeichies(c echo.Context) error {
 
 	// Eager Loadingを使用して関連データを事前に読み込む
 	seichies, err := models.Seichies(
-		qm.Load("Content"), // 関連する作品データを事前読み込み
-		qm.Load("Place"),   // 関連する場所データを事前読み込み
+		qm.Load("Content"),
+		qm.Load("Content.Genre"),
+		qm.Load("Place"),
 		qm.Select(
-			"DISTINCT seichies.*", // 重複を除外
+			"DISTINCT seichies.*",
 			"contents.content_name",
+			"genres.genre_name",
 			"places.address",
 			"places.zip_code",
 		),
 		qm.InnerJoin("contents on seichies.content_id = contents.content_id"),
+		qm.InnerJoin("genres on contents.genre_id = genres.genre_id"),
 		qm.InnerJoin("places on seichies.place_id = places.place_id"),
 		qm.Where(
 			"(seichies.seichi_name LIKE ? OR contents.content_name LIKE ? OR places.address LIKE ?) AND LENGTH(?) >= 2",
 			searchPattern, searchPattern, searchPattern, query,
 		),
 		qm.OrderBy("seichies.created_at DESC"),
-		qm.Limit(20), // 制限を50から20に変更
+		qm.Limit(20),
 	).All(ctx, h.DB)
 
 	if err != nil {
@@ -494,8 +499,7 @@ func (h *SeichiHandler) SearchSeichies(c echo.Context) error {
 
 	response := make([]SeichiResponse, 0, len(seichies))
 	for _, s := range seichies {
-		// null checkを追加
-		if s.R == nil || s.R.Content == nil || s.R.Place == nil {
+		if s.R == nil || s.R.Content == nil || s.R.Place == nil || s.R.Content.R.Genre == nil {
 			log.Printf("Warning: Skipping seichi %d due to missing related data", s.SeichiID)
 			continue
 		}
@@ -511,6 +515,8 @@ func (h *SeichiHandler) SearchSeichies(c echo.Context) error {
 			Longitude:   longitude,
 			ContentID:   s.ContentID,
 			ContentName: s.R.Content.ContentName,
+			GenreID:     s.R.Content.GenreID,
+			GenreName:   s.R.Content.R.Genre.GenreName,
 			Address:     s.R.Place.Address,
 			PostalCode:  s.R.Place.ZipCode,
 			CreatedAt:   s.CreatedAt.Time,
