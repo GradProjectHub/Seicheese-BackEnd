@@ -1,2 +1,8 @@
+# Configs
+src/configs/dev/*
+src/configs/prod/*
+
 # Firebase credentials
 src/configs/firebase-admin-*.json 
+src/configs/dev/firebase-admin-*.json
+src/configs/prod/firebase-admin-*.json
