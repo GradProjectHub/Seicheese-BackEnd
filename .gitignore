@@ -1,8 +1,13 @@
 # Configs
 src/configs/dev/*
 src/configs/prod/*
+nginx/ssl/*
 
 # Firebase credentials
 src/configs/firebase-admin-*.json 
 src/configs/dev/firebase-admin-*.json
 src/configs/prod/firebase-admin-*.json
+
+# Log
+nginx/logs/*
+
