@@ -329,9 +329,10 @@ func (h *SeichiHandler) getClusteredSeichies(ctx context.Context, bounds string)
 }
 
 func getAddressFromCoordinates(lat, lng float64) (map[string]string, error) {
+	apiKey := os.Getenv("GOOGLE_MAPS_API_KEY")
 	url := fmt.Sprintf(
 		"https://maps.googleapis.com/maps/api/geocode/json?latlng=%f,%f&key=%s&language=ja&region=jp",
-		lat, lng, os.Getenv("GOOGLE_MAPS_API_KEY"),
+		lat, lng, apiKey,
 	)
 
 	resp, err := http.Get(url)
@@ -379,6 +380,8 @@ func getAddressFromCoordinates(lat, lng float64) (map[string]string, error) {
 		city       string
 		district   string
 		street     string
+		chome      string
+		block      string
 		number     string
 		postal     string
 	)
@@ -396,15 +399,13 @@ func getAddressFromCoordinates(lat, lng float64) (map[string]string, error) {
 			case "sublocality_level_1":
 				district = component.LongName
 			case "sublocality_level_2":
-				if street == "" {
-					street = component.LongName
-				}
-			case "street_number":
-				number = component.LongName
+				street = component.LongName
+			case "sublocality_level_3":
+				chome = component.LongName
+			case "sublocality_level_4":
+				block = component.LongName
 			case "premise":
-				if number == "" {
-					number = component.LongName
-				}
+				number = component.LongName
 			}
 		}
 	}
@@ -423,9 +424,19 @@ func getAddressFromCoordinates(lat, lng float64) (map[string]string, error) {
 	if street != "" {
 		addressParts = append(addressParts, street)
 	}
+	if chome != "" {
+		addressParts = append(addressParts, chome)
+	}
+	if block != "" {
+		addressParts = append(addressParts, block)
+	}
 	if number != "" {
 		addressParts = append(addressParts, number)
 	}
+
+	// デバッグログを追加
+	log.Printf("Address components: prefecture=%s, city=%s, district=%s, street=%s, chome=%s, block=%s, number=%s",
+		prefecture, city, district, street, chome, block, number)
 
 	address := strings.Join(addressParts, "")
 
