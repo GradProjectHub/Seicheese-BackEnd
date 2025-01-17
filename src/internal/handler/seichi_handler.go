@@ -330,18 +330,27 @@ func (h *SeichiHandler) getClusteredSeichies(ctx context.Context, bounds string)
 
 func getAddressFromCoordinates(lat, lng float64) (map[string]string, error) {
 	url := fmt.Sprintf(
-		"https://maps.googleapis.com/maps/api/geocode/json?latlng=%f,%f&key=%s&language=ja&result_type=postal_code|administrative_area_level_1|locality|sublocality|street_number|premise",
+		"https://maps.googleapis.com/maps/api/geocode/json?latlng=%f,%f&key=%s&language=ja&region=jp",
 		lat, lng, os.Getenv("GOOGLE_MAPS_API_KEY"),
 	)
 
 	resp, err := http.Get(url)
 	if err != nil {
-		return nil, err
+		log.Printf("Geocoding API request failed: %v", err)
+		return nil, fmt.Errorf("住所情報の取得に失敗しました: %v", err)
 	}
 	defer resp.Body.Close()
 
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("Failed to read response body: %v", err)
+		return nil, fmt.Errorf("レスポンスの読み取りに失敗しました: %v", err)
+	}
+	log.Printf("Geocoding API response: %s", string(body))
+
 	var result struct {
 		Results []struct {
+			FormattedAddress string `json:"formatted_address"`
 			AddressComponents []struct {
 				LongName string   `json:"long_name"`
 				Types    []string `json:"types"`
@@ -350,12 +359,19 @@ func getAddressFromCoordinates(lat, lng float64) (map[string]string, error) {
 		Status string `json:"status"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
+	if err := json.NewDecoder(bytes.NewReader(body)).Decode(&result); err != nil {
+		log.Printf("Failed to decode response: %v", err)
+		return nil, fmt.Errorf("レスポンスのデコードに失敗しました: %v", err)
+	}
+
+	if result.Status != "OK" {
+		log.Printf("Geocoding API returned non-OK status: %s", result.Status)
+		return nil, fmt.Errorf("住所情報の取得に失敗しました（ステータス: %s）", result.Status)
 	}
 
 	if len(result.Results) == 0 {
-		return nil, fmt.Errorf("no results found")
+		log.Printf("No results found in Geocoding API response")
+		return nil, fmt.Errorf("指定された座標の住所情報が見つかりませんでした")
 	}
 
 	var (
