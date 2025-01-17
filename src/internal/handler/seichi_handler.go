@@ -425,13 +425,17 @@ func getAddressFromCoordinates(lat, lng float64) (map[string]string, error) {
 		addressParts = append(addressParts, street)
 	}
 	if chome != "" {
-		addressParts = append(addressParts, chome)
+		addressParts = append(addressParts, strings.ReplaceAll(chome, "丁目", "丁目"))
 	}
-	if block != "" {
-		addressParts = append(addressParts, block)
-	}
-	if number != "" {
-		addressParts = append(addressParts, number)
+	if block != "" && number != "" {
+		addressParts = append(addressParts, fmt.Sprintf("%s-%s", block, number))
+	} else {
+		if block != "" {
+			addressParts = append(addressParts, fmt.Sprintf("%s番", block))
+		}
+		if number != "" {
+			addressParts = append(addressParts, fmt.Sprintf("%s号", number))
+		}
 	}
 
 	// デバッグログを追加
