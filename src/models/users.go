@@ -26,7 +26,8 @@ import (
 type User struct {
 	UserID     uint      `boil:"user_id" json:"user_id" toml:"user_id" yaml:"user_id"`
 	FirebaseID string    `boil:"firebase_id" json:"firebase_id" toml:"firebase_id" yaml:"firebase_id"`
-	IsAdmin    bool      `boil:"is_admin" json:"is_admin" toml:"is_admin" yaml:"is_admin"`
+	Points     int       `boil:"points" json:"points" toml:"points" yaml:"points"`
+	Stamps     []int     `boil:"stamps" json:"stamps" toml:"stamps" yaml:"stamps"`
 	CreatedAt  null.Time `boil:"created_at" json:"created_at,omitempty" toml:"created_at" yaml:"created_at,omitempty"`
 	UpdatedAt  null.Time `boil:"updated_at" json:"updated_at,omitempty" toml:"updated_at" yaml:"updated_at,omitempty"`
 
@@ -37,13 +38,15 @@ type User struct {
 var UserColumns = struct {
 	UserID     string
 	FirebaseID string
-	IsAdmin    string
+	Points     string
+	Stamps     string
 	CreatedAt  string
 	UpdatedAt  string
 }{
 	UserID:     "user_id",
 	FirebaseID: "firebase_id",
-	IsAdmin:    "is_admin",
+	Points:     "points",
+	Stamps:     "stamps",
 	CreatedAt:  "created_at",
 	UpdatedAt:  "updated_at",
 }
@@ -1667,7 +1670,7 @@ func (q userQuery) DeleteAll(ctx context.Context, exec boil.ContextExecutor) (in
 
 	rowsAff, err := result.RowsAffected()
 	if err != nil {
-		return 0, errors.Wrap(err, "models: failed to get rows affected by deleteall for users")
+		return 0, errors.Wrap(err, "models: unable to retrieve rows affected for users")
 	}
 
 	return rowsAff, nil

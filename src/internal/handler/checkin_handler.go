@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"net/http"
 	"time"
+	"math"
 
 	"seicheese/models"
 
@@ -15,6 +16,22 @@ import (
 type CheckinHandler struct {
 	DB *sql.DB
 }
+
+// ポイント計算用の定数
+const (
+	BasePoints = 100
+	FirstVisitBonus = 500
+	ConsecutiveDaysBonus = 200
+	SpecialEventBonus = 1000
+)
+
+// スタンプ獲得条件
+const (
+	FirstVisitStamp = 1
+	FiveVisitsStamp = 2
+	TenVisitsStamp = 3
+	SpecialEventStamp = 4
+)
 
 func (h *CheckinHandler) GetUserCheckins(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -36,6 +53,56 @@ func (h *CheckinHandler) GetUserCheckins(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, checkins)
+}
+
+// ポイント計算ロジック
+func (h *CheckinHandler) calculatePoints(ctx echo.Context, userID uint, seichiID int) (int, int, error) {
+	// 基本ポイント
+	points := BasePoints
+
+	// 初回訪問ボーナスのチェック
+	exists, err := models.CheckinLogs(
+		qm.Where("user_id = ? AND seichi_id = ?", userID, seichiID),
+	).Exists(ctx.Request().Context(), h.DB)
+	if err != nil {
+		return 0, 0, err
+	}
+	if !exists {
+		points += FirstVisitBonus
+		return points, FirstVisitStamp, nil
+	}
+
+	// 連続訪問ボーナスのチェック
+	yesterday := time.Now().AddDate(0, 0, -1)
+	hasConsecutiveVisit, err := models.CheckinLogs(
+		qm.Where("user_id = ? AND created_at >= ?", userID, yesterday),
+	).Exists(ctx.Request().Context(), h.DB)
+	if err != nil {
+		return 0, 0, err
+	}
+	if hasConsecutiveVisit {
+		points += ConsecutiveDaysBonus
+	}
+
+	// 訪問回数に基づくスタンプの決定
+	visits, err := models.CheckinLogs(
+		qm.Where("user_id = ? AND seichi_id = ?", userID, seichiID),
+	).Count(ctx.Request().Context(), h.DB)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	var stampID int
+	switch {
+	case visits == 4:
+		stampID = FiveVisitsStamp
+	case visits == 9:
+		stampID = TenVisitsStamp
+	default:
+		stampID = 0
+	}
+
+	return points, stampID, nil
 }
 
 func (h *CheckinHandler) Checkin(c echo.Context) error {
@@ -63,20 +130,49 @@ func (h *CheckinHandler) Checkin(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の取得に失敗")
 	}
 
+	// ポイントとスタンプの計算
+	points, stampID, err := h.calculatePoints(c, user.UserID, req.SeichiID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "ポイント計算に失敗")
+	}
+
 	// チェックインログの作成
 	checkinLog := &models.CheckinLog{
 		UserID:    user.UserID,
 		SeichiID:  req.SeichiID,
 		CreatedAt: time.Now(),
+		Points:    points,
+		StampID:   stampID,
 	}
 
-	// データベースに保存
-	if err := checkinLog.Insert(ctx, h.DB, boil.Infer()); err != nil {
+	// トランザクション開始
+	tx, err := h.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクション開始に失敗")
+	}
+	defer tx.Rollback()
+
+	// チェックインログの保存
+	if err := checkinLog.Insert(ctx, tx, boil.Infer()); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "チェックイン処理に失敗")
+	}
+
+	// ユーザーのポイントを更新
+	user.Points += points
+	if err := user.Update(ctx, tx, boil.Infer()); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "ポイント更新に失敗")
+	}
+
+	// トランザクションのコミット
+	if err := tx.Commit(); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションのコミットに失敗")
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"message": "チェックイン成功",
 		"checkin": checkinLog,
+		"points_earned": points,
+		"total_points": user.Points,
+		"stamp_id": stampID,
 	})
 }

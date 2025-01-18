@@ -26,6 +26,8 @@ type CheckinLog struct {
 	CreatedAt time.Time `boil:"created_at" json:"created_at" toml:"created_at" yaml:"created_at"`
 	UserID    uint      `boil:"user_id" json:"user_id" toml:"user_id" yaml:"user_id"`
 	SeichiID  int       `boil:"seichi_id" json:"seichi_id" toml:"seichi_id" yaml:"seichi_id"`
+	Points    int       `boil:"points" json:"points" toml:"points" yaml:"points"`
+	StampID   int       `boil:"stamp_id" json:"stamp_id" toml:"stamp_id" yaml:"stamp_id"`
 
 	R *checkinLogR `boil:"-" json:"-" toml:"-" yaml:"-"`
 	L checkinLogL  `boil:"-" json:"-" toml:"-" yaml:"-"`
@@ -35,10 +37,14 @@ var CheckinLogColumns = struct {
 	CreatedAt string
 	UserID    string
 	SeichiID  string
+	Points    string
+	StampID   string
 }{
 	CreatedAt: "created_at",
 	UserID:    "user_id",
 	SeichiID:  "seichi_id",
+	Points:    "points",
+	StampID:   "stamp_id",
 }
 
 var CheckinLogTableColumns = struct {
