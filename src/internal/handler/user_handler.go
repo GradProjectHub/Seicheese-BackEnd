@@ -9,6 +9,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/volatiletech/sqlboiler/v4/boil"
+	"github.com/volatiletech/sqlboiler/v4/null"
 )
 
 type UserHandler struct {
@@ -58,12 +59,46 @@ func (h *UserHandler) RegisterUser(c echo.Context) error {
 
 	user := &models.User{
 		FirebaseID: uid,
+		CreatedAt:  null.TimeFrom(time.Now()),
+		UpdatedAt:  null.TimeFrom(time.Now()),
 	}
 
-	if err := user.Insert(c.Request().Context(), h.DB, boil.Infer()); err != nil {
+	tx, err := h.DB.BeginTx(c.Request().Context(), nil)
+	if err != nil {
+		log.Printf("Error starting transaction: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "トランザクションの開始に失敗しました",
+		})
+	}
+	defer tx.Rollback()
+
+	if err := user.Insert(c.Request().Context(), tx, boil.Infer()); err != nil {
 		log.Printf("Error inserting user: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "ユーザーの登録に失敗しました",
+		})
+	}
+
+	// ポイントレコードを作成
+	now := time.Now()
+	newPoint := &models.Point{
+		UserID:       user.UserID,
+		CurrentPoint: 0,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+
+	if err := newPoint.Insert(c.Request().Context(), tx, boil.Infer()); err != nil {
+		log.Printf("Error inserting point record: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "ポイントの初期化に失敗しました",
+		})
+	}
+
+	if err := tx.Commit(); err != nil {
+		log.Printf("Error committing transaction: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "トランザクションのコミットに失敗しました",
 		})
 	}
 
