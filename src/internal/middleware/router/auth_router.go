@@ -45,16 +45,19 @@ func NewAuthRouter(e *echo.Echo, db *sql.DB) {
 		log.Fatalf("Error initializing Auth client: %v\n", err)
 	}
 
+	// 認証ミドルウェアの初期化
+	authMiddleware := middleware.NewAuthMiddleware(authClient, db)
+
 	// AuthHandlerの初期化とルートの登録
 	authHandler := &handler.AuthHandler{
 		DB:         db,
 		AuthClient: authClient,
 	}
 
-	RegisterAuthRoutes(e, authClient, authHandler)
+	RegisterAuthRoutes(e, authClient, authHandler, authMiddleware)
 }
 
-func RegisterAuthRoutes(e *echo.Echo, authClient *auth.Client, authHandler *handler.AuthHandler) {
+func RegisterAuthRoutes(e *echo.Echo, authClient *auth.Client, authHandler *handler.AuthHandler, authMiddleware *middleware.AuthMiddleware) {
 	// ヘルスチェックエンドポイントを追加（認証不要）
 	e.GET("/health", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{
@@ -66,7 +69,7 @@ func RegisterAuthRoutes(e *echo.Echo, authClient *auth.Client, authHandler *hand
 	e.POST("/auth/validate", authHandler.ValidateToken)
 
 	authGroup := e.Group("")
-	authGroup.Use(middleware.FirebaseAuthMiddleware(authClient))
+	authGroup.Use(authMiddleware.FirebaseAuthMiddleware())
 	// ハンドラーの割り当て
 	authGroup.POST("/auth/signin", authHandler.SignIn)
 }

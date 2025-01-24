@@ -3,9 +3,12 @@
 package middleware
 
 import (
+	"database/sql"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
+	"seicheese/models"
 	"strings"
 	"time"
 
@@ -13,9 +16,22 @@ import (
 
 	"firebase.google.com/go/v4/auth"
 	"github.com/labstack/echo/v4"
+	"github.com/volatiletech/sqlboiler/v4/queries/qm"
 )
 
-func FirebaseAuthMiddleware(authClient *auth.Client) echo.MiddlewareFunc {
+type AuthMiddleware struct {
+	AuthClient *auth.Client
+	DB         *sql.DB
+}
+
+func NewAuthMiddleware(authClient *auth.Client, db *sql.DB) *AuthMiddleware {
+	return &AuthMiddleware{
+		AuthClient: authClient,
+		DB:         db,
+	}
+}
+
+func (m *AuthMiddleware) FirebaseAuthMiddleware() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			token := c.Request().Header.Get("Authorization")
@@ -24,14 +40,29 @@ func FirebaseAuthMiddleware(authClient *auth.Client) echo.MiddlewareFunc {
 			}
 
 			idToken := strings.TrimPrefix(token, "Bearer ")
-			tokenVerified, err := authClient.VerifyIDToken(c.Request().Context(), idToken)
+			tokenVerified, err := m.AuthClient.VerifyIDToken(c.Request().Context(), idToken)
 			if err != nil {
+				log.Printf("トークン検証エラー: %v", err)
 				return echo.NewHTTPError(http.StatusUnauthorized, "無効なトークンです")
 			}
 
 			// トークンの追加検証
 			if err := validateToken(tokenVerified); err != nil {
+				log.Printf("トークン追加検証エラー: %v", err)
 				return echo.NewHTTPError(http.StatusUnauthorized, err.Error())
+			}
+
+			// ユーザーの存在確認
+			exists, err := models.Users(
+				qm.Where("firebase_id = ?", tokenVerified.UID),
+			).Exists(c.Request().Context(), m.DB)
+			if err != nil {
+				log.Printf("ユーザー存在確認エラー: %v", err)
+				return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の確認に失敗しました")
+			}
+			if !exists {
+				log.Printf("ユーザーが存在しません: firebase_id=%s", tokenVerified.UID)
+				return echo.NewHTTPError(http.StatusUnauthorized, "ユーザーが登録されていません。再度サインインしてください。")
 			}
 
 			c.Set("firebase_token", idToken)
