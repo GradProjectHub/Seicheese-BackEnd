@@ -11,7 +11,13 @@ INSERT IGNORE INTO users (user_id, firebase_id, is_admin) VALUES
 -- +goose StatementEnd
 
 -- +goose StatementBegin
--- ドラマとマンガ作品の追加
+-- まずジャンルを挿入
+INSERT INTO genres (genre_id, genre_name) VALUES
+(1, 'アニメ'),
+(2, 'マンガ'),
+(3, 'ドラマ');
+
+-- その後コンテンツを挿入
 INSERT INTO contents (content_id, content_name, genre_id) VALUES
 (6, '孤独のグルメ', 3),
 (7, '逃げるは恥だが役に立つ', 3),
@@ -50,4 +56,5 @@ DELETE FROM seichies WHERE content_id IN (SELECT content_id FROM contents WHERE 
 DELETE FROM places WHERE place_id IN (6, 7, 8, 9, 10);
 DELETE FROM contents WHERE content_id IN (6, 7, 8, 9, 10);
 DELETE FROM users WHERE user_id = 1 AND firebase_id = 'admin';
+DELETE FROM genres WHERE genre_id IN (1, 2, 3);
 -- +goose StatementEnd 
