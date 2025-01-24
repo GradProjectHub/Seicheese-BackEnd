@@ -9,10 +9,10 @@ import (
 )
 
 func RegisterSeichiRoutes(e *echo.Echo, seichiHandler *handler.SeichiHandler, authClient *auth.Client) {
-	seichiGroup := e.Group("/api/seichi")
+	seichiGroup := e.Group("/seichies")
 	seichiGroup.Use(middleware.FirebaseAuthMiddleware(authClient))
 
-	seichiGroup.POST("/register", seichiHandler.RegisterSeichi)
-	seichiGroup.GET("/list", seichiHandler.GetSeichies)
+	seichiGroup.POST("", seichiHandler.RegisterSeichi)
+	seichiGroup.GET("", seichiHandler.GetSeichies)
 	seichiGroup.GET("/search", seichiHandler.SearchSeichies)
 }
