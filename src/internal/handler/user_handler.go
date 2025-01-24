@@ -68,12 +68,16 @@ func (h *UserHandler) RegisterUser(c echo.Context) error {
 			"error": "トランザクションの開始に失敗しました",
 		})
 	}
+
+	// トランザクションのロールバック処理
+	var txErr error
 	defer func() {
-		if err != nil {
-			if rollbackErr := tx.Rollback(); rollbackErr != nil {
-				log.Printf("Error rolling back transaction: %v", rollbackErr)
+		if txErr != nil {
+			if rbErr := tx.Rollback(); rbErr != nil {
+				log.Printf("トランザクションのロールバックに失敗: %v", rbErr)
+			} else {
+				log.Printf("トランザクションをロールバックしました")
 			}
-			log.Printf("トランザクションをロールバックしました")
 		}
 	}()
 
@@ -89,6 +93,7 @@ func (h *UserHandler) RegisterUser(c echo.Context) error {
 	}
 
 	if err := user.Insert(c.Request().Context(), tx, boil.Infer()); err != nil {
+		txErr = err
 		log.Printf("Error inserting user: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "ユーザーの登録に失敗しました",
@@ -106,6 +111,7 @@ func (h *UserHandler) RegisterUser(c echo.Context) error {
 	}
 
 	if err := newPoint.Insert(c.Request().Context(), tx, boil.Infer()); err != nil {
+		txErr = err
 		log.Printf("Error inserting point record: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "ポイントの初期化に失敗しました",
@@ -116,6 +122,7 @@ func (h *UserHandler) RegisterUser(c echo.Context) error {
 
 	// トランザクションをコミット
 	if err := tx.Commit(); err != nil {
+		txErr = err
 		log.Printf("Error committing transaction: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "トランザクションのコミットに失敗しました",
