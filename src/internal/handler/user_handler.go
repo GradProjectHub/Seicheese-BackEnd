@@ -9,7 +9,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/volatiletech/sqlboiler/v4/boil"
-	"github.com/volatiletech/sqlboiler/v4/null"
+	"github.com/volatiletech/null/v8"
 )
 
 type UserHandler struct {
@@ -42,6 +42,8 @@ func (h *UserHandler) RegisterUser(c echo.Context) error {
 		})
 	}
 
+	log.Printf("ユーザー登録開始: firebase_id=%s", uid)
+
 	exists, err := models.Users(
 		models.UserWhere.FirebaseID.EQ(uid),
 	).Exists(c.Request().Context(), h.DB)
@@ -52,17 +54,13 @@ func (h *UserHandler) RegisterUser(c echo.Context) error {
 		})
 	}
 	if exists {
+		log.Printf("ユーザーが既に存在します: firebase_id=%s", uid)
 		return c.JSON(http.StatusConflict, map[string]string{
 			"error": "既に登録されているユーザーです",
 		})
 	}
 
-	user := &models.User{
-		FirebaseID: uid,
-		CreatedAt:  null.TimeFrom(time.Now()),
-		UpdatedAt:  null.TimeFrom(time.Now()),
-	}
-
+	// トランザクションを開始
 	tx, err := h.DB.BeginTx(c.Request().Context(), nil)
 	if err != nil {
 		log.Printf("Error starting transaction: %v", err)
@@ -70,7 +68,25 @@ func (h *UserHandler) RegisterUser(c echo.Context) error {
 			"error": "トランザクションの開始に失敗しました",
 		})
 	}
-	defer tx.Rollback()
+	defer func() {
+		if err != nil {
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
+				log.Printf("Error rolling back transaction: %v", rollbackErr)
+			}
+			log.Printf("トランザクションをロールバックしました")
+		}
+	}()
+
+	log.Printf("トランザクション開始")
+
+	// ユーザーを作成
+	now := time.Now()
+	user := &models.User{
+		FirebaseID: uid,
+		Name:       req.Name,
+		CreatedAt:  null.TimeFrom(now),
+		UpdatedAt:  null.TimeFrom(now),
+	}
 
 	if err := user.Insert(c.Request().Context(), tx, boil.Infer()); err != nil {
 		log.Printf("Error inserting user: %v", err)
@@ -79,8 +95,9 @@ func (h *UserHandler) RegisterUser(c echo.Context) error {
 		})
 	}
 
+	log.Printf("ユーザーを作成しました: user_id=%d", user.UserID)
+
 	// ポイントレコードを作成
-	now := time.Now()
 	newPoint := &models.Point{
 		UserID:       user.UserID,
 		CurrentPoint: 0,
@@ -95,6 +112,9 @@ func (h *UserHandler) RegisterUser(c echo.Context) error {
 		})
 	}
 
+	log.Printf("ポイントレコードを作成しました: user_id=%d", user.UserID)
+
+	// トランザクションをコミット
 	if err := tx.Commit(); err != nil {
 		log.Printf("Error committing transaction: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
@@ -102,8 +122,11 @@ func (h *UserHandler) RegisterUser(c echo.Context) error {
 		})
 	}
 
+	log.Printf("トランザクションをコミットしました")
+
 	return c.JSON(http.StatusCreated, UserResponse{
 		ID:        user.UserID,
+		Name:      user.Name,
 		CreatedAt: user.CreatedAt.Time,
 		UpdatedAt: user.UpdatedAt.Time,
 	})
