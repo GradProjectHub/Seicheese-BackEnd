@@ -29,19 +29,27 @@ type AuthHandler struct {
 
 // ポイント情報作成用の関数
 func (h *AuthHandler) createInitialPoint(ctx context.Context, tx *sql.Tx, userID int) error {
-	now := time.Now()
-	point := &models.Point{
-		UserID:       userID,
-		CurrentPoint: 0,
-		CreatedAt:    now,
-		UpdatedAt:    now,
-	}
+	// SQLを直接実行する形に変更
+	query := `
+		INSERT INTO points (user_id, current_point, created_at, updated_at)
+		VALUES (?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+	`
 	
 	log.Printf("ポイントレコード作成開始: user_id=%d", userID)
-	if err := point.Insert(ctx, tx, boil.Infer()); err != nil {
+	result, err := tx.ExecContext(ctx, query, userID)
+	if err != nil {
 		log.Printf("ポイントレコード作成エラー: %v", err)
 		return fmt.Errorf("failed to create point record: %v", err)
 	}
+	
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get affected rows: %v", err)
+	}
+	if affected != 1 {
+		return fmt.Errorf("expected 1 row to be affected, got %d", affected)
+	}
+	
 	log.Printf("ポイントレコード作成完了: user_id=%d", userID)
 	return nil
 }
