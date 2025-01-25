@@ -17,8 +17,6 @@ import (
 
 	"firebase.google.com/go/v4/auth"
 	"github.com/labstack/echo/v4"
-	"github.com/volatiletech/null/v8"
-	"github.com/volatiletech/sqlboiler/v4/boil"
 	"github.com/volatiletech/sqlboiler/v4/queries/qm"
 )
 
@@ -169,9 +167,16 @@ func (h *AuthHandler) findOrCreateUser(ctx context.Context, token *auth.Token) (
 
 	// ユーザー登録を呼び出す
 	userHandler := &UserHandler{DB: h.DB}
-	req := echo.Context{}
+	req := echo.NewContext(c.Request(), c.Response())
 	req.Set("uid", token.UID)
-	return userHandler.RegisterUser(&req)
+	user, point, isNew, err := userHandler.RegisterUser(req)
+	if err != nil {
+		log.Printf("ユーザー登録エラー: %v", err)
+		return nil, nil, false, fmt.Errorf("ユーザー登録エラー: %v", err)
+	}
+
+	log.Printf("ユーザーの取得または作成が完了: user_id=%d, isNew=%v", user.UserID, isNew)
+	return user, point, isNew, nil
 }
 
 // ユーザーロールの検証
