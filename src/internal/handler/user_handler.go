@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
+	"fmt"
 	"log"
 	"net/http"
 	"seicheese/models"
@@ -254,4 +256,68 @@ func (h *UserHandler) UpdateUserPoints(c echo.Context) error {
 		"user_id": user.UserID,
 		"points":  point.CurrentPoint,
 	})
+}
+
+// CreateUser handles user creation
+func (h *UserHandler) CreateUser(ctx context.Context, firebaseID string) (*models.User, error) {
+	log.Printf("新規ユーザー作成開始: firebase_id=%s", firebaseID)
+
+	// 新規ユーザーの作成
+	now := time.Now()
+	user := &models.User{
+		FirebaseID: firebaseID,
+		CreatedAt:  null.TimeFrom(now),
+		UpdatedAt:  null.TimeFrom(now),
+	}
+
+	log.Printf("新規ユーザー作成試行: firebase_id=%s", firebaseID)
+
+	if err := user.Insert(ctx, h.DB, boil.Infer()); err != nil {
+		log.Printf("ユーザー作成エラー: %v", err)
+		return nil, fmt.Errorf("ユーザーの登録に失敗しました: %v", err)
+	}
+
+	log.Printf("ユーザーを作成しました: user_id=%d, firebase_id=%s", user.UserID, user.FirebaseID)
+
+	// ポイント情報の作成
+	point := &models.Point{
+		UserID:       user.UserID,
+		CurrentPoint: 0,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+
+	log.Printf("ポイント情報作成試行: user_id=%d", user.UserID)
+
+	if err := point.Insert(ctx, h.DB, boil.Infer()); err != nil {
+		log.Printf("ポイント情報作成エラー: %v", err)
+		return nil, fmt.Errorf("ポイント情報の作成に失敗しました: %v", err)
+	}
+
+	log.Printf("ポイント情報を作成しました: user_id=%d", user.UserID)
+	return user, nil
+}
+
+// GetOrCreateUser handles getting or creating a user
+func (h *UserHandler) GetOrCreateUser(ctx context.Context, firebaseID string) (*models.User, bool, error) {
+	log.Printf("ユーザー取得または作成開始: firebase_id=%s", firebaseID)
+
+	// ユーザーの存在確認
+	user, err := models.Users(
+		models.UserWhere.FirebaseID.EQ(firebaseID),
+	).One(ctx, h.DB)
+
+	if err == sql.ErrNoRows {
+		// ユーザーが存在しない場合は新規作成
+		user, err = h.CreateUser(ctx, firebaseID)
+		if err != nil {
+			return nil, false, err
+		}
+		return user, true, nil
+	} else if err != nil {
+		log.Printf("ユーザー情報の取得に失敗: %v", err)
+		return nil, false, fmt.Errorf("ユーザー情報の取得に失敗しました: %v", err)
+	}
+
+	return user, false, nil
 }

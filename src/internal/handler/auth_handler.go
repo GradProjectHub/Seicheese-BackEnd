@@ -25,6 +25,15 @@ import (
 type AuthHandler struct {
 	DB         *sql.DB
 	AuthClient *auth.Client
+	UserHandler *UserHandler
+}
+
+func NewAuthHandler(db *sql.DB, authClient *auth.Client) *AuthHandler {
+	return &AuthHandler{
+		DB:         db,
+		AuthClient: authClient,
+		UserHandler: &UserHandler{DB: db},
+	}
 }
 
 // ポイント情報作成用の関数
@@ -80,60 +89,53 @@ func (h *AuthHandler) RegisterUser(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusConflict, "既に登録されているユーザーです")
 	}
 
-	// トランザクション開始
-	tx, err := h.DB.BeginTx(ctx, nil)
-	if err != nil {
-		log.Printf("トランザクション開始エラー: %v", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクション開始に失敗しました")
-	}
-
-	var txErr error
-	defer func() {
-		if tx != nil && txErr != nil {
-			if rbErr := tx.Rollback(); rbErr != nil {
-				log.Printf("トランザクションのロールバックに失敗: %v", rbErr)
-			} else {
-				log.Printf("トランザクションをロールバックしました")
-			}
-		}
-	}()
-
-	// ユーザーを作成
-	now := time.Now()
-	user := &models.User{
-		FirebaseID: verifiedToken.UID,
-		CreatedAt:  null.TimeFrom(now),
-		UpdatedAt:  null.TimeFrom(now),
-	}
-
-	if err := user.Insert(ctx, tx, boil.Infer()); err != nil {
-		txErr = err
-		log.Printf("ユーザー作成エラー: %v", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザーの登録に失敗しました")
-	}
-
-	log.Printf("ユーザーを作成しました: user_id=%d", user.UserID)
-
-	// トランザクションをコミット
-	if err := tx.Commit(); err != nil {
-		txErr = err
-		log.Printf("トランザクションのコミットに失敗: %v", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションのコミットに失敗しました")
-	}
-	tx = nil
-
-	log.Printf("トランザクションをコミットしました")
-
-	// トリガーの実行を待機
-	time.Sleep(100 * time.Millisecond)
-
-	// ポイント情報の取得
-	point, err := models.Points(
-		models.PointWhere.UserID.EQ(user.UserID),
+	// ユーザー情報の取得または作成
+	user, err := models.Users(
+		models.UserWhere.FirebaseID.EQ(verifiedToken.UID),
 	).One(ctx, h.DB)
-	if err != nil {
-		log.Printf("ポイント情報の取得に失敗: %v", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の取得に失敗しました")
+
+	isNewUser := false
+	if err == sql.ErrNoRows {
+		log.Printf("新規ユーザーとして処理開始: firebase_id=%s", verifiedToken.UID)
+
+		// 新規ユーザーの作成
+		now := time.Now()
+		user = &models.User{
+			FirebaseID: verifiedToken.UID,
+			CreatedAt:  null.TimeFrom(now),
+			UpdatedAt:  null.TimeFrom(now),
+		}
+
+		log.Printf("新規ユーザー作成試行: firebase_id=%s", verifiedToken.UID)
+
+		if err := user.Insert(ctx, h.DB, boil.Infer()); err != nil {
+			log.Printf("ユーザー作成エラー: %v", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "ユーザーの登録に失敗しました")
+		}
+
+		log.Printf("ユーザーを作成しました: user_id=%d, firebase_id=%s", user.UserID, user.FirebaseID)
+
+		// ポイント情報の作成
+		point := &models.Point{
+			UserID:       user.UserID,
+			CurrentPoint: 0,
+			CreatedAt:    now,
+			UpdatedAt:    now,
+		}
+
+		log.Printf("ポイント情報作成試行: user_id=%d", user.UserID)
+
+		if err := point.Insert(ctx, h.DB, boil.Infer()); err != nil {
+			log.Printf("ポイント情報作成エラー: %v", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の作成に失敗しました")
+		}
+
+		log.Printf("ポイント情報を作成しました: user_id=%d", user.UserID)
+		isNewUser = true
+
+	} else if err != nil {
+		log.Printf("ユーザー情報の取得に失敗: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の取得に失敗しました")
 	}
 
 	return c.JSON(http.StatusCreated, map[string]interface{}{
@@ -145,7 +147,6 @@ func (h *AuthHandler) RegisterUser(c echo.Context) error {
 		"point": point,
 	})
 }
-
 
 func (h *AuthHandler) SignIn(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -167,77 +168,10 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 	log.Printf("トークン検証成功: firebase_id=%s", verifiedToken.UID)
 
 	// ユーザー情報の取得または作成
-	user, err := models.Users(
-		models.UserWhere.FirebaseID.EQ(verifiedToken.UID),
-	).One(ctx, h.DB)
-
-	isNewUser := false
-	if err == sql.ErrNoRows {
-		log.Printf("新規ユーザーとして処理開始: firebase_id=%s", verifiedToken.UID)
-
-		// トランザクション開始
-		tx, err := h.DB.BeginTx(ctx, nil)
-		if err != nil {
-			log.Printf("トランザクション開始エラー: %v", err)
-			return echo.NewHTTPError(http.StatusInternalServerError, "トランザクション開始に失敗しました")
-		}
-
-		var txErr error
-		defer func() {
-			if tx != nil && txErr != nil {
-				if rbErr := tx.Rollback(); rbErr != nil {
-					log.Printf("トランザクションのロールバックに失敗: %v", rbErr)
-				} else {
-					log.Printf("トランザクションをロールバックしました")
-				}
-			}
-		}()
-
-		// 新規ユーザーの作成
-		now := time.Now()
-		user = &models.User{
-			FirebaseID: verifiedToken.UID,
-			CreatedAt:  null.TimeFrom(now),
-			UpdatedAt:  null.TimeFrom(now),
-		}
-
-		if err := user.Insert(ctx, tx, boil.Infer()); err != nil {
-			txErr = err
-			log.Printf("ユーザー作成エラー: %v", err)
-			return echo.NewHTTPError(http.StatusInternalServerError, "ユーザーの登録に失敗しました")
-		}
-
-		log.Printf("ユーザーを作成しました: user_id=%d", user.UserID)
-
-		// ポイント情報の作成
-		point := &models.Point{
-			UserID:       user.UserID,
-			CurrentPoint: 0,
-			CreatedAt:    now,
-			UpdatedAt:    now,
-		}
-
-		if err := point.Insert(ctx, tx, boil.Infer()); err != nil {
-			txErr = err
-			log.Printf("ポイント情報作成エラー: %v", err)
-			return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の作成に失敗しました")
-		}
-
-		log.Printf("ポイント情報を作成しました: user_id=%d", user.UserID)
-
-		// トランザクションをコミット
-		if err := tx.Commit(); err != nil {
-			txErr = err
-			log.Printf("トランザクションのコミットに失敗: %v", err)
-			return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションのコミットに失敗しました")
-		}
-		tx = nil
-		isNewUser = true
-
-		log.Printf("トランザクションをコミットしました")
-	} else if err != nil {
-		log.Printf("ユーザー情報の取得に失敗: %v", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の取得に失敗しました")
+	user, isNewUser, err := h.UserHandler.GetOrCreateUser(ctx, verifiedToken.UID)
+	if err != nil {
+		log.Printf("ユーザー取得/作成エラー: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の処理に失敗しました")
 	}
 
 	// ポイント情報の取得

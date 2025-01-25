@@ -17,8 +17,6 @@ import (
 	"firebase.google.com/go/v4/auth"
 	"github.com/labstack/echo/v4"
 	"github.com/volatiletech/sqlboiler/v4/queries/qm"
-	"github.com/volatiletech/null/v8"
-	"github.com/volatiletech/sqlboiler/v4/boil"
 )
 
 type AuthMiddleware struct {
