@@ -140,7 +140,8 @@ func (h *CheckinHandler) Checkin(c echo.Context) error {
 		UserID:    user.UserID,
 		SeichiID:  req.SeichiID,
 		CreatedAt: time.Now(),
-		EarnedPoint: points,
+		Points:    points,
+		StampID:   stampID,
 	}
 
 	// トランザクション開始
