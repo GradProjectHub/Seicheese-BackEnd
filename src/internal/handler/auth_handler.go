@@ -174,24 +174,24 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 	isNewUser := false
 	if err == sql.ErrNoRows {
 		log.Printf("新規ユーザーとして処理開始: firebase_id=%s", verifiedToken.UID)
-		
-		// トランザクション開始
-		tx, err := h.DB.BeginTx(ctx, nil)
-		if err != nil {
-			log.Printf("トランザクション開始エラー: %v", err)
-			return echo.NewHTTPError(http.StatusInternalServerError, "トランザクション開始に失敗しました")
-		}
+
+	// トランザクション開始
+	tx, err := h.DB.BeginTx(ctx, nil)
+	if err != nil {
+		log.Printf("トランザクション開始エラー: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクション開始に失敗しました")
+	}
 
 		var txErr error
-		defer func() {
+	defer func() {
 			if tx != nil && txErr != nil {
-				if rbErr := tx.Rollback(); rbErr != nil {
-					log.Printf("トランザクションのロールバックに失敗: %v", rbErr)
+			if rbErr := tx.Rollback(); rbErr != nil {
+				log.Printf("トランザクションのロールバックに失敗: %v", rbErr)
 				} else {
 					log.Printf("トランザクションをロールバックしました")
-				}
 			}
-		}()
+		}
+	}()
 
 		// 新規ユーザーの作成
 		now := time.Now()
@@ -209,12 +209,12 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 
 		log.Printf("ユーザーを作成しました: user_id=%d", user.UserID)
 
-		// トランザクションをコミット
-		if err := tx.Commit(); err != nil {
+	// トランザクションをコミット
+	if err := tx.Commit(); err != nil {
 			txErr = err
-			log.Printf("トランザクションのコミットに失敗: %v", err)
-			return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションのコミットに失敗しました")
-		}
+		log.Printf("トランザクションのコミットに失敗: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションのコミットに失敗しました")
+	}
 		tx = nil
 		isNewUser = true
 
@@ -410,7 +410,7 @@ func (h *AuthHandler) findOrCreateUser(ctx context.Context, token *auth.Token) (
 	}
 
 	log.Printf("新規ユーザー作成試行: firebase_id=%s", newUser.FirebaseID)
-	
+
 	if err := newUser.Insert(ctx, tx, boil.Infer()); err != nil {
 		txErr = err
 		log.Printf("ユーザー作成エラー: %v, firebase_id=%s", err, token.UID)
@@ -437,7 +437,7 @@ func (h *AuthHandler) findOrCreateUser(ctx context.Context, token *auth.Token) (
 	var pointErr error
 	for i := 0; i < 5; i++ {
 		point, pointErr = models.Points(
-			qm.Where("user_id = ?", newUser.UserID),
+		qm.Where("user_id = ?", newUser.UserID),
 		).One(ctx, h.DB)
 		if pointErr == nil {
 			break
