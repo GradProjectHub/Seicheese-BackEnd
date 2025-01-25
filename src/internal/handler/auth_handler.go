@@ -29,37 +29,18 @@ type AuthHandler struct {
 
 // ポイント情報作成用の関数
 func (h *AuthHandler) createInitialPoint(ctx context.Context, tx *sql.Tx, userID int) error {
-	// SQLを直接実行する形に変更
-	query := `
-		INSERT INTO points (user_id, current_point, created_at, updated_at)
-		VALUES (?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-	`
+	log.Printf("ポイントレコード作成開始: user_id=%d", userID)
 	
-	log.Printf("ポイントレコード作成開始: user_id=%d, SQL=%s", userID, query)
-	
-	// プリペアドステートメントを使用
-	stmt, err := tx.PrepareContext(ctx, query)
-	if err != nil {
-		log.Printf("プリペアドステートメント作成エラー: %v", err)
-		return fmt.Errorf("failed to prepare statement: %v", err)
+	point := &models.Point{
+		UserID:       uint(userID),
+		CurrentPoint: 0,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
 	}
-	defer stmt.Close()
 	
-	result, err := stmt.ExecContext(ctx, userID)
-	if err != nil {
+	if err := point.Insert(ctx, tx, boil.Infer()); err != nil {
 		log.Printf("ポイントレコード作成エラー: %v", err)
 		return fmt.Errorf("failed to create point record: %v", err)
-	}
-	
-	affected, err := result.RowsAffected()
-	if err != nil {
-		log.Printf("影響を受けた行数の取得に失敗: %v", err)
-		return fmt.Errorf("failed to get affected rows: %v", err)
-	}
-	
-	log.Printf("ポイントレコード作成結果: affected=%d", affected)
-	if affected != 1 {
-		return fmt.Errorf("expected 1 row to be affected, got %d", affected)
 	}
 	
 	log.Printf("ポイントレコード作成完了: user_id=%d", userID)
