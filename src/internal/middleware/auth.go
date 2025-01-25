@@ -62,7 +62,6 @@ func (m *AuthMiddleware) FirebaseAuthMiddleware() echo.MiddlewareFunc {
 				return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の確認に失敗しました")
 			}
 			if !exists {
-				log.Printf("ユーザーが存在しません: firebase_id=%s", tokenVerified.UID)
 				log.Printf("ユーザーが存在しないため、新規ユーザー作成処理に進みます")
 				userHandler := &UserHandler{DB: m.DB}
 				newUser := &models.User{
