@@ -67,35 +67,7 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 	}
 	log.Printf("トークン検証成功: firebase_id=%s", verifiedToken.UID)
 
-	// まず既存ユーザーを検索
-	existingUser, err := models.Users(
-		qm.Where("firebase_id = ?", verifiedToken.UID),
-	).One(ctx, h.DB)
-
-	if err == nil {
-		log.Printf("既存ユーザーを検出: firebase_id=%s, user_id=%d", verifiedToken.UID, existingUser.UserID)
-		// 既存ユーザーのポイント情報を取得
-		point, err := models.Points(
-			qm.Where("user_id = ?", existingUser.UserID),
-		).One(ctx, h.DB)
-		if err != nil {
-			log.Printf("ポイント情報の取得に失敗: %v", err)
-			return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の取得に失敗しました")
-		}
-
-		return c.JSON(http.StatusOK, map[string]interface{}{
-			"message": "サインインに成功しました",
-			"user":    existingUser,
-			"point":   point,
-		})
-	}
-
-	if err != sql.ErrNoRows {
-		log.Printf("ユーザー検索エラー: %v", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー検索に失敗しました")
-	}
-
-	// 新規ユーザー作成のためのトランザクション開始
+	// トランザクション開始
 	tx, err := h.DB.BeginTx(ctx, nil)
 	if err != nil {
 		log.Printf("トランザクション開始エラー: %v", err)
@@ -112,35 +84,12 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 		}
 	}()
 
-	// 新規ユーザーの作成
-	now := null.TimeFrom(time.Now())
-	newUser := &models.User{
-		FirebaseID: verifiedToken.UID,
-		CreatedAt:  now,
-		UpdatedAt:  now,
+	// ユーザーの取得または作成
+	user, point, isNewUser, err := h.findOrCreateUser(ctx, tx, verifiedToken)
+	if err != nil {
+		log.Printf("ユーザーの取得または作成に失敗: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザーの取得または作成に失敗しました")
 	}
-
-	if err := newUser.Insert(ctx, tx, boil.Infer()); err != nil {
-		log.Printf("ユーザー作成エラー: %v", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー作成に失敗しました")
-	}
-
-	log.Printf("新規ユーザー作成完了: user_id=%d, firebase_id=%s", newUser.UserID, newUser.FirebaseID)
-
-	// ポイント情報の作成
-	point := &models.Point{
-		UserID:       newUser.UserID,
-		CurrentPoint: 0,
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
-	}
-
-	if err := point.Insert(ctx, tx, boil.Infer()); err != nil {
-		log.Printf("ポイント情報作成エラー: %v", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の作成に失敗しました")
-	}
-
-	log.Printf("ポイント情報作成完了: user_id=%d", newUser.UserID)
 
 	// トランザクションをコミット
 	if err := tx.Commit(); err != nil {
@@ -150,10 +99,19 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 	committed = true
 	log.Printf("トランザクションをコミット完了")
 
-	log.Printf("サインイン処理完了: user_id=%d, firebase_id=%s", newUser.UserID, newUser.FirebaseID)
-	return c.JSON(http.StatusCreated, map[string]interface{}{
-		"message": "ユーザーを新規登録しました",
-		"user":    newUser,
+	if isNewUser {
+		log.Printf("新規ユーザー登録完了: user_id=%d, firebase_id=%s", user.UserID, user.FirebaseID)
+		return c.JSON(http.StatusCreated, map[string]interface{}{
+			"message": "ユーザーを新規登録しました",
+			"user":    user,
+			"point":   point,
+		})
+	}
+
+	log.Printf("既存ユーザーのサインイン完了: user_id=%d, firebase_id=%s", user.UserID, user.FirebaseID)
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"message": "サインインに成功しました",
+		"user":    user,
 		"point":   point,
 	})
 }
@@ -207,22 +165,30 @@ func extractIDToken(c echo.Context) string {
 }
 
 // ユーザー情報の取得または作成
-func (h *AuthHandler) findOrCreateUser(ctx context.Context, tx *sql.Tx, token *auth.Token) (*models.User, error) {
+func (h *AuthHandler) findOrCreateUser(ctx context.Context, tx *sql.Tx, token *auth.Token) (*models.User, *models.Point, bool, error) {
 	log.Printf("ユーザー検索開始: firebase_id=%s", token.UID)
 
-	// まず通常のDBコネクションで既存ユーザーを検索
+	// トランザクション内でユーザーを検索
 	existingUser, err := models.Users(
 		qm.Where("firebase_id = ?", token.UID),
-	).One(ctx, h.DB)
+	).One(ctx, tx)
 
 	if err == nil {
 		log.Printf("既存ユーザーを検出: firebase_id=%s, user_id=%d", token.UID, existingUser.UserID)
-		return existingUser, nil
+		// 既存ユーザーのポイント情報を取得
+		point, err := models.Points(
+			qm.Where("user_id = ?", existingUser.UserID),
+		).One(ctx, tx)
+		if err != nil {
+			log.Printf("ポイント情報の取得に失敗: %v", err)
+			return nil, nil, false, fmt.Errorf("ポイント情報の取得に失敗: %v", err)
+		}
+		return existingUser, point, false, nil
 	}
 
 	if err != sql.ErrNoRows {
 		log.Printf("ユーザー検索エラー: %v", err)
-		return nil, fmt.Errorf("ユーザー検索エラー: %v", err)
+		return nil, nil, false, fmt.Errorf("ユーザー検索エラー: %v", err)
 	}
 
 	log.Printf("新規ユーザー作成開始: firebase_id=%s", token.UID)
@@ -235,10 +201,9 @@ func (h *AuthHandler) findOrCreateUser(ctx context.Context, tx *sql.Tx, token *a
 		UpdatedAt:  now,
 	}
 
-	// トランザクション内でユーザーを作成
 	if err := newUser.Insert(ctx, tx, boil.Infer()); err != nil {
 		log.Printf("ユーザー作成エラー: %v", err)
-		return nil, fmt.Errorf("ユーザー作成エラー: %v", err)
+		return nil, nil, false, fmt.Errorf("ユーザー作成エラー: %v", err)
 	}
 
 	log.Printf("新規ユーザー作成完了: user_id=%d, firebase_id=%s", newUser.UserID, newUser.FirebaseID)
@@ -253,23 +218,11 @@ func (h *AuthHandler) findOrCreateUser(ctx context.Context, tx *sql.Tx, token *a
 
 	if err := point.Insert(ctx, tx, boil.Infer()); err != nil {
 		log.Printf("ポイント情報作成エラー: %v", err)
-		return nil, fmt.Errorf("ポイント情報作成エラー: %v", err)
+		return nil, nil, false, fmt.Errorf("ポイント情報作成エラー: %v", err)
 	}
 
 	log.Printf("ポイント情報作成完了: user_id=%d", newUser.UserID)
-
-	// 作成したユーザーを再度取得して確認
-	createdUser, err := models.Users(
-		qm.Where("firebase_id = ?", token.UID),
-	).One(ctx, tx)
-
-	if err != nil {
-		log.Printf("作成したユーザーの取得エラー: %v", err)
-		return nil, fmt.Errorf("作成したユーザーの取得エラー: %v", err)
-	}
-
-	log.Printf("ユーザー作成確認完了: user_id=%d, firebase_id=%s", createdUser.UserID, createdUser.FirebaseID)
-	return createdUser, nil
+	return newUser, point, true, nil
 }
 
 // ユーザーロールの検証
