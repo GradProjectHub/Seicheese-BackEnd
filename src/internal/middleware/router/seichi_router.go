@@ -9,10 +9,20 @@ import (
 )
 
 func RegisterSeichiRoutes(e *echo.Echo, seichiHandler *handler.SeichiHandler, authClient *auth.Client) {
-	seichiGroup := e.Group("/seichies")
-	seichiGroup.Use(middleware.FirebaseAuthMiddleware(authClient))
+	// 認証ミドルウェアの初期化
+	authMiddleware := middleware.NewAuthMiddleware(authClient, seichiHandler.DB)
 
-	seichiGroup.POST("", seichiHandler.RegisterSeichi)
+	// 聖地関連のルーティンググループ
+	seichiGroup := e.Group("/seichies")
+
+	// すべてのエンドポイントで認証が必要
+	seichiGroup.Use(authMiddleware.FirebaseAuthMiddleware())
+
+	// 聖地の取得
 	seichiGroup.GET("", seichiHandler.GetSeichies)
+
+	// 聖地の登録
+	seichiGroup.POST("", seichiHandler.RegisterSeichi)
+
 	seichiGroup.GET("/search", seichiHandler.SearchSeichies)
 }

@@ -9,9 +9,18 @@ import (
 )
 
 func RegisterPlaceRoutes(e *echo.Echo, placeHandler *handler.PlaceHandler, authClient *auth.Client) {
-	placeGroup := e.Group("/api/places")
-	placeGroup.Use(middleware.FirebaseAuthMiddleware(authClient))
+	// 認証ミドルウェアの初期化
+	authMiddleware := middleware.NewAuthMiddleware(authClient, placeHandler.DB)
 
-	placeGroup.GET("", placeHandler.GetPlace)
+	// 場所関連のルーティンググループ
+	placeGroup := e.Group("/places")
+
+	// すべてのエンドポイントで認証が必要
+	placeGroup.Use(authMiddleware.FirebaseAuthMiddleware())
+
+	// 場所の取得
+	placeGroup.GET("", placeHandler.GetPlaces)
+
+	// 場所の登録
 	placeGroup.POST("", placeHandler.RegisterPlace)
 }

@@ -9,13 +9,18 @@ import (
 )
 
 func RegisterMarkerRoutes(e *echo.Echo, markerHandler *handler.MarkerHandler, authClient *auth.Client) {
-    // マーカー関連のルーティンググループ
-    markerGroup := e.Group("/api/markers")
+    // 認証ミドルウェアの初期化
+    authMiddleware := middleware.NewAuthMiddleware(authClient, markerHandler.DB)
 
-    // 認証が必要なエンドポイント
-    markerGroup.Use(middleware.FirebaseAuthMiddleware(authClient))
+    // マーカー関連のルーティンググループ
+    markerGroup := e.Group("/markers")
+
+    // すべてのエンドポイントで認証が必要
+    markerGroup.Use(authMiddleware.FirebaseAuthMiddleware())
+
+    // マーカーの取得
     markerGroup.GET("", markerHandler.GetMarkers)
 
-    // 画像取得は認証不要
-    e.GET("/api/markers/:id/image", markerHandler.GetMarkerImage)
+    // マーカー画像の取得
+    markerGroup.GET("/:id/image", markerHandler.GetMarkerImage)
 } 

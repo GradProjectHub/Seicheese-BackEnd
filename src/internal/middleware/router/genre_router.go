@@ -19,7 +19,4 @@ func RegisterGenreRoutes(e *echo.Echo, genreHandler *handler.GenreHandler, authC
 
 	// ジャンルの取得
 	genreGroup.GET("", genreHandler.GetGenres)
-
-	// ジャンルの登録
-	genreGroup.POST("", genreHandler.RegisterGenre)
 }

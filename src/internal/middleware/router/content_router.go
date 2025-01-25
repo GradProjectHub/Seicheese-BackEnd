@@ -19,9 +19,9 @@ func RegisterContentRoutes(e *echo.Echo, contentHandler *handler.ContentHandler,
 	// すべてのエンドポイントで認証が必要
 	contentGroup.Use(authMiddleware.FirebaseAuthMiddleware())
 
-	// コンテンツの取得
-	contentGroup.GET("", contentHandler.GetContents)
+	// コンテンツの検索
+	contentGroup.GET("/search", contentHandler.SearchContents)
 
 	// コンテンツの登録
-	contentGroup.POST("", contentHandler.RegisterContent)
+	contentGroup.POST("/register", contentHandler.RegisterContent)
 }
