@@ -175,23 +175,23 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 	if err == sql.ErrNoRows {
 		log.Printf("新規ユーザーとして処理開始: firebase_id=%s", verifiedToken.UID)
 
-	// トランザクション開始
-	tx, err := h.DB.BeginTx(ctx, nil)
-	if err != nil {
-		log.Printf("トランザクション開始エラー: %v", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクション開始に失敗しました")
-	}
+		// トランザクション開始
+		tx, err := h.DB.BeginTx(ctx, nil)
+		if err != nil {
+			log.Printf("トランザクション開始エラー: %v", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "トランザクション開始に失敗しました")
+		}
 
 		var txErr error
-	defer func() {
+		defer func() {
 			if tx != nil && txErr != nil {
-			if rbErr := tx.Rollback(); rbErr != nil {
-				log.Printf("トランザクションのロールバックに失敗: %v", rbErr)
+				if rbErr := tx.Rollback(); rbErr != nil {
+					log.Printf("トランザクションのロールバックに失敗: %v", rbErr)
 				} else {
 					log.Printf("トランザクションをロールバックしました")
+				}
 			}
-		}
-	}()
+		}()
 
 		// 新規ユーザーの作成
 		now := time.Now()
@@ -209,42 +209,43 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 
 		log.Printf("ユーザーを作成しました: user_id=%d", user.UserID)
 
-	// トランザクションをコミット
-	if err := tx.Commit(); err != nil {
+		// ポイント情報の作成
+		point := &models.Point{
+			UserID:       user.UserID,
+			CurrentPoint: 0,
+			CreatedAt:    now,
+			UpdatedAt:    now,
+		}
+
+		if err := point.Insert(ctx, tx, boil.Infer()); err != nil {
 			txErr = err
-		log.Printf("トランザクションのコミットに失敗: %v", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションのコミットに失敗しました")
-	}
+			log.Printf("ポイント情報作成エラー: %v", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の作成に失敗しました")
+		}
+
+		log.Printf("ポイント情報を作成しました: user_id=%d", user.UserID)
+
+		// トランザクションをコミット
+		if err := tx.Commit(); err != nil {
+			txErr = err
+			log.Printf("トランザクションのコミットに失敗: %v", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションのコミットに失敗しました")
+		}
 		tx = nil
 		isNewUser = true
 
 		log.Printf("トランザクションをコミットしました")
-
-		// トリガーの実行を待機
-		time.Sleep(100 * time.Millisecond)
 	} else if err != nil {
 		log.Printf("ユーザー情報の取得に失敗: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の取得に失敗しました")
 	}
 
-	// ポイント情報の取得（リトライ付き）
-	var point *models.Point
-	var pointErr error
-	for i := 0; i < 5; i++ {
-		point, pointErr = models.Points(
-			models.PointWhere.UserID.EQ(user.UserID),
-		).One(ctx, h.DB)
-		if pointErr == nil {
-			break
-		}
-		if !isNewUser {
-			// 既存ユーザーの場合は即時エラー
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	if pointErr != nil {
-		log.Printf("ポイント情報の取得に失敗: %v", pointErr)
+	// ポイント情報の取得
+	point, err := models.Points(
+		models.PointWhere.UserID.EQ(user.UserID),
+	).One(ctx, h.DB)
+	if err != nil {
+		log.Printf("ポイント情報の取得に失敗: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の取得に失敗しました")
 	}
 
