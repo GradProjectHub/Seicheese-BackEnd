@@ -183,3 +183,94 @@ func (h *UserHandler) GetUser(c echo.Context) error {
 		"created_at": user.CreatedAt,
 	})
 }
+
+// ポイント情報を更新するメソッド
+func (h *UserHandler) UpdateUserPoints(c echo.Context) error {
+	uid := c.Get("uid").(string)
+	if uid == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "ユーザーIDが必要です",
+		})
+	}
+
+	var req struct {
+		Points int `json:"points"`
+	}
+
+	if err := c.Bind(&req); err != nil {
+		log.Printf("Error binding request: %v", err)
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "不正なリクエスト形式です",
+		})
+	}
+
+	// トランザクションを開始
+	tx, err := h.DB.BeginTx(c.Request().Context(), nil)
+	if err != nil {
+		log.Printf("Error starting transaction: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "トランザクションの開始に失敗しました",
+		})
+	}
+
+	// トランザクションのロールバック処理
+	var txErr error
+	defer func() {
+		if txErr != nil {
+			if rbErr := tx.Rollback(); rbErr != nil {
+				log.Printf("トランザクションのロールバックに失敗: %v", rbErr)
+			} else {
+				log.Printf("トランザクションをロールバックしました")
+			}
+		}
+	}()
+
+	// ユーザーを取得
+	user, err := models.Users(
+		models.UserWhere.FirebaseID.EQ(uid),
+	).One(c.Request().Context(), h.DB)
+	if err != nil {
+		txErr = err
+		log.Printf("Error fetching user: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "ユーザー情報の取得に失敗しました",
+		})
+	}
+
+	// ポイント情報を更新
+	point, err := models.Points(
+		models.PointWhere.UserID.EQ(user.UserID),
+	).One(c.Request().Context(), h.DB)
+	if err != nil {
+		txErr = err
+		log.Printf("Error fetching point record: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "ポイント情報の取得に失敗しました",
+		})
+	}
+
+	point.CurrentPoint += req.Points
+	if err := point.Update(c.Request().Context(), tx, boil.Infer()); err != nil {
+		txErr = err
+		log.Printf("Error updating point record: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "ポイントの更新に失敗しました",
+		})
+	}
+
+	// トランザクションをコミット
+	if err := tx.Commit(); err != nil {
+		txErr = err
+		log.Printf("Error committing transaction: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "トランザクションのコミットに失敗しました",
+		})
+	}
+
+	log.Printf("ポイント情報を更新しました: user_id=%d, new_points=%d", user.UserID, point.CurrentPoint)
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"user_id": user.UserID,
+		"points":  point.CurrentPoint,
+	})
+}

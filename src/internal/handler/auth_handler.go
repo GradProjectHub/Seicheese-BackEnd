@@ -30,19 +30,16 @@ type AuthHandler struct {
 // ポイント情報作成用の関数
 func (h *AuthHandler) createInitialPoint(ctx context.Context, tx *sql.Tx, user *models.User) error {
 	log.Printf("ポイントレコード作成開始: user_id=%d", user.UserID)
-	
-	point := &models.Point{
-		UserID:       user.UserID,
-		CurrentPoint: 0,
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
-	}
-	
-	if err := point.Insert(ctx, tx, boil.Infer()); err != nil {
+
+	// UserHandlerを作成
+	userHandler := &UserHandler{DB: h.DB}
+
+	// UserHandlerのメソッドを呼び出してポイントを作成
+	if err := userHandler.CreateInitialPoint(ctx, tx, user); err != nil {
 		log.Printf("ポイントレコード作成エラー: %v", err)
 		return fmt.Errorf("failed to create point record: %v", err)
 	}
-	
+
 	log.Printf("ポイントレコード作成完了: user_id=%d", user.UserID)
 	return nil
 }
