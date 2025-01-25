@@ -18,22 +18,14 @@ import (
 )
 
 func NewAuthRouter(e *echo.Echo, db *sql.DB) {
-	// 環境変数から現在の環境を取得
-	env := os.Getenv("APP_ENV")
-	var credentialsFile string
-
-	// 環境に応じて適切な認証ファイルを選択
-	switch env {
-	case "development":
-		credentialsFile = "configs/firebase-admin-dev.json"
-	case "production":
-		credentialsFile = "configs/firebase-admin-prd.json"
-	default:
-		credentialsFile = "configs/firebase-admin-dev.json"
+	// 環境変数から認証情報ファイルのパスを取得
+	credPath := os.Getenv("FIREBASE_SDK_PATH")
+	if credPath == "" {
+		log.Fatalf("FIREBASE_SDK_PATHの環境変数が設定されていません")
 	}
 
 	// Firebase初期化
-	opt := option.WithCredentialsFile(credentialsFile)
+	opt := option.WithCredentialsFile(credPath)
 	app, err := firebase.NewApp(context.Background(), nil, opt)
 	if err != nil {
 		log.Fatalf("Error initializing Firebase app: %v\n", err)
