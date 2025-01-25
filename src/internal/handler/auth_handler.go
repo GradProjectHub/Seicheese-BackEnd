@@ -161,10 +161,12 @@ func (h *AuthHandler) findOrCreateUser(ctx context.Context, tx *sql.Tx, token *a
 	).One(ctx, tx)
 	
 	if err == nil {
+		log.Printf("既存ユーザーを検出: firebase_id=%s", token.UID)
 		return user, nil
 	}
 	
 	if err != sql.ErrNoRows {
+		log.Printf("ユーザー検索エラー: %v", err)
 		return nil, fmt.Errorf("ユーザー検索エラー: %v", err)
 	}
 
@@ -178,14 +180,30 @@ func (h *AuthHandler) findOrCreateUser(ctx context.Context, tx *sql.Tx, token *a
 		UpdatedAt:  now,
 	}
 
-	if err := newUser.Insert(ctx, tx, boil.Infer()); err != nil {
+	// ユーザーの挿入
+	err = newUser.Insert(ctx, tx, boil.Infer())
+	if err != nil {
+		log.Printf("ユーザー作成エラー: %v", err)
 		return nil, fmt.Errorf("ユーザー作成エラー: %v", err)
 	}
 
-	log.Printf("新規ユーザー作成完了: user_id=%d", newUser.UserID)
+	log.Printf("新規ユーザー作成完了: user_id=%d, firebase_id=%s", newUser.UserID, newUser.FirebaseID)
 
-	// トリガーによるポイント作成を待つ
-	time.Sleep(100 * time.Millisecond)
+	// ポイント情報の作成
+	point := &models.Point{
+		UserID:       newUser.UserID,
+		CurrentPoint: 0,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+
+	err = point.Insert(ctx, tx, boil.Infer())
+	if err != nil {
+		log.Printf("ポイント情報作成エラー: %v", err)
+		return nil, fmt.Errorf("ポイント情報作成エラー: %v", err)
+	}
+
+	log.Printf("ポイント情報作成完了: user_id=%d", newUser.UserID)
 
 	return newUser, nil
 }
