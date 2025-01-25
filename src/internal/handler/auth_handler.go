@@ -210,17 +210,27 @@ func (h *AuthHandler) findOrCreateUser(ctx context.Context, tx *sql.Tx, token *a
 
 	// トリガーによるポイント作成を待機
 	log.Printf("トリガーによるポイント作成の待機開始: user_id=%d", newUser.UserID)
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond) // 待機時間を500msに増加
 	log.Printf("トリガーによるポイント作成の待機完了: user_id=%d", newUser.UserID)
 
-	// ポイント情報の取得
-	point, err := models.Points(
-		qm.Where("user_id = ?", newUser.UserID),
-	).One(ctx, tx)
-	if err != nil {
-		log.Printf("ポイント情報の取得に失敗: %v", err)
-		return nil, nil, false, fmt.Errorf("ポイント情報の取得に失敗: %v", err)
+	// ポイント情報の取得を複数回試行
+	var point *models.Point
+	var pointErr error
+	for i := 0; i < 3; i++ { // 最大3回試行
+		point, pointErr = models.Points(
+			qm.Where("user_id = ?", newUser.UserID),
+		).One(ctx, tx)
+		if pointErr == nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
+	if pointErr != nil {
+		log.Printf("ポイント情報の取得に失敗: %v", pointErr)
+		return nil, nil, false, fmt.Errorf("ポイント情報の取得に失敗: %v", pointErr)
+	}
+
+	log.Printf("新規ユーザーのポイント情報取得完了: user_id=%d", newUser.UserID)
 
 	return newUser, point, true, nil
 }
