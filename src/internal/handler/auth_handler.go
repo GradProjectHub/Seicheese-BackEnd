@@ -30,9 +30,9 @@ type AuthHandler struct {
 
 func NewAuthHandler(db *sql.DB, authClient *auth.Client) *AuthHandler {
 	return &AuthHandler{
-		DB:         db,
-		AuthClient: authClient,
-		UserHandler: &UserHandler{DB: db},
+		DB:          db,
+		AuthClient:  authClient,
+		UserHandler: NewUserHandler(db),
 	}
 }
 

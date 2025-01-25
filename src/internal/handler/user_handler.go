@@ -18,6 +18,13 @@ type UserHandler struct {
 	DB *sql.DB
 }
 
+// NewUserHandler creates a new UserHandler instance
+func NewUserHandler(db *sql.DB) *UserHandler {
+	return &UserHandler{
+		DB: db,
+	}
+}
+
 type UserResponse struct {
 	ID        uint      `json:"id"`
 	Name      string    `json:"name"`
