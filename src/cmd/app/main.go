@@ -70,12 +70,25 @@ func main() {
 		DB: db,
 	}
 
+	// 認証ミドルウェアの初期化
+	authMiddleware := middleware.NewAuthMiddleware(authClient, db)
+
+	// APIグループの作成
+	api := e.Group("/api")
+
 	// ルーターの登録
-	router.RegisterGenreRoutes(e, genreHandler, authClient)
-	router.RegisterSeichiRoutes(e, seichiHandler, authClient)
-	router.RegisterContentRoutes(e, contentHandler, authClient)
-	router.RegisterUserRoutes(e, userHandler, middleware.NewAuthMiddleware(authClient, db))
-	router.RegisterAuthRoutes(e, authClient, authHandler, middleware.NewAuthMiddleware(authClient, db))
+	router.RegisterAuthRoutes(api, authClient, authHandler, authMiddleware)
+	router.RegisterUserRoutes(api, userHandler, authMiddleware)
+	router.RegisterGenreRoutes(api, genreHandler, authMiddleware)
+	router.RegisterSeichiRoutes(api, seichiHandler, authMiddleware)
+	router.RegisterContentRoutes(api, contentHandler, authMiddleware)
+
+	// ヘルスチェック用のエンドポイント
+	e.GET("/health", func(c echo.Context) error {
+		return c.JSON(http.StatusOK, map[string]string{
+			"status": "ok",
+		})
+	})
 
 	// サーバー起動
 	port := os.Getenv("PORT")

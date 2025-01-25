@@ -8,10 +8,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-func RegisterSeichiRoutes(e *echo.Echo, seichiHandler *handler.SeichiHandler, authClient *auth.Client) {
-	// 認証ミドルウェアの初期化
-	authMiddleware := middleware.NewAuthMiddleware(authClient, seichiHandler.DB)
-
+func RegisterSeichiRoutes(e *echo.Echo, seichiHandler *handler.SeichiHandler, authMiddleware *middleware.AuthMiddleware) {
 	// 聖地関連のルーティンググループ
 	seichiGroup := e.Group("/seichies")
 
