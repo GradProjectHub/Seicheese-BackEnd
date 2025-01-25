@@ -67,37 +67,12 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 	}
 	log.Printf("トークン検証成功: firebase_id=%s", verifiedToken.UID)
 
-	// トランザクション開始
-	tx, err := h.DB.BeginTx(ctx, nil)
-	if err != nil {
-		log.Printf("トランザクション開始エラー: %v", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクション開始に失敗しました")
-	}
-
-	committed := false
-	defer func() {
-		if !committed {
-			log.Printf("トランザクションのロールバック実行")
-			if rbErr := tx.Rollback(); rbErr != nil {
-				log.Printf("トランザクションのロールバックに失敗: %v", rbErr)
-			}
-		}
-	}()
-
 	// ユーザーの取得または作成
-	user, point, isNew, err := h.findOrCreateUser(ctx, tx, verifiedToken)
+	user, point, isNew, err := h.findOrCreateUser(ctx, verifiedToken)
 	if err != nil {
 		log.Printf("ユーザー取得/作成エラー: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の処理に失敗しました")
 	}
-
-	// トランザクションをコミット
-	if err := tx.Commit(); err != nil {
-		log.Printf("トランザクションのコミットに失敗: %v", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションのコミットに失敗しました")
-	}
-	committed = true
-	log.Printf("トランザクションをコミット完了")
 
 	if isNew {
 		log.Printf("新規ユーザー登録完了: user_id=%d, firebase_id=%s", user.UserID, user.FirebaseID)
@@ -165,20 +140,20 @@ func extractIDToken(c echo.Context) string {
 }
 
 // ユーザー情報の取得または作成
-func (h *AuthHandler) findOrCreateUser(ctx context.Context, tx *sql.Tx, token *auth.Token) (*models.User, *models.Point, bool, error) {
+func (h *AuthHandler) findOrCreateUser(ctx context.Context, token *auth.Token) (*models.User, *models.Point, bool, error) {
 	log.Printf("ユーザー検索開始: firebase_id=%s", token.UID)
 
-	// トランザクション内でユーザーを検索
+	// 既存ユーザーの検索
 	existingUser, err := models.Users(
 		qm.Where("firebase_id = ?", token.UID),
-	).One(ctx, tx)
+	).One(ctx, h.DB)
 
 	if err == nil {
 		log.Printf("既存ユーザーを検出: firebase_id=%s, user_id=%d", token.UID, existingUser.UserID)
 		// 既存ユーザーのポイント情報を取得
 		point, err := models.Points(
 			qm.Where("user_id = ?", existingUser.UserID),
-		).One(ctx, tx)
+		).One(ctx, h.DB)
 		if err != nil {
 			log.Printf("ポイント情報の取得に失敗: %v", err)
 			return nil, nil, false, fmt.Errorf("ポイント情報の取得に失敗: %v", err)
@@ -190,6 +165,21 @@ func (h *AuthHandler) findOrCreateUser(ctx context.Context, tx *sql.Tx, token *a
 		log.Printf("ユーザー検索エラー: %v", err)
 		return nil, nil, false, fmt.Errorf("ユーザー検索エラー: %v", err)
 	}
+
+	// トランザクション開始
+	tx, err := h.DB.BeginTx(ctx, nil)
+	if err != nil {
+		log.Printf("トランザクション開始エラー: %v", err)
+		return nil, nil, false, fmt.Errorf("トランザクション開始に失敗しました: %v", err)
+	}
+
+	defer func() {
+		if tx != nil {
+			if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
+				log.Printf("トランザクションのロールバックに失敗: %v", err)
+			}
+		}
+	}()
 
 	log.Printf("新規ユーザー作成開始: firebase_id=%s", token.UID)
 
@@ -206,24 +196,29 @@ func (h *AuthHandler) findOrCreateUser(ctx context.Context, tx *sql.Tx, token *a
 		return nil, nil, false, fmt.Errorf("ユーザー作成エラー: %v", err)
 	}
 
+	// トランザクションをコミット
+	if err := tx.Commit(); err != nil {
+		log.Printf("トランザクションのコミットに失敗: %v", err)
+		return nil, nil, false, fmt.Errorf("トランザクションのコミットに失敗: %v", err)
+	}
+	tx = nil // Prevent rollback after successful commit
+
 	log.Printf("新規ユーザー作成完了: user_id=%d, firebase_id=%s", newUser.UserID, newUser.FirebaseID)
 
-	// トリガーによるポイント作成を待機
-	log.Printf("トリガーによるポイント作成の待機開始: user_id=%d", newUser.UserID)
-	time.Sleep(500 * time.Millisecond) // 待機時間を500msに増加
-	log.Printf("トリガーによるポイント作成の待機完了: user_id=%d", newUser.UserID)
+	// トリガーの実行を待機
+	time.Sleep(100 * time.Millisecond)
 
 	// ポイント情報の取得を複数回試行
 	var point *models.Point
 	var pointErr error
-	for i := 0; i < 3; i++ { // 最大3回試行
+	for i := 0; i < 5; i++ {
 		point, pointErr = models.Points(
 			qm.Where("user_id = ?", newUser.UserID),
-		).One(ctx, tx)
+		).One(ctx, h.DB)
 		if pointErr == nil {
 			break
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 	}
 	if pointErr != nil {
 		log.Printf("ポイント情報の取得に失敗: %v", pointErr)
@@ -231,7 +226,6 @@ func (h *AuthHandler) findOrCreateUser(ctx context.Context, tx *sql.Tx, token *a
 	}
 
 	log.Printf("新規ユーザーのポイント情報取得完了: user_id=%d", newUser.UserID)
-
 	return newUser, point, true, nil
 }
 
