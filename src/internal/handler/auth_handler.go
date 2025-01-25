@@ -439,3 +439,24 @@ func validateToken(token *auth.Token) error {
 
 	return nil
 }
+
+func (h *AuthHandler) SignOut(c echo.Context) error {
+	// サインアウト処理の実装
+	log.Printf("サインアウト処理開始")
+	// 必要な処理を追加
+	return c.JSON(http.StatusOK, map[string]string{"message": "サインアウトしました"})
+}
+
+func (h *AuthHandler) DeleteUser(c echo.Context) error {
+	// ユーザー削除処理の実装
+	log.Printf("ユーザー削除処理開始")
+	// 必要な処理を追加
+	return c.JSON(http.StatusOK, map[string]string{"message": "ユーザーが削除されました"})
+}
+
+func (h *AuthHandler) GetUserPoints(c echo.Context) error {
+	// ユーザーのポイント情報取得処理の実装
+	log.Printf("ユーザーのポイント情報取得処理開始")
+	// 必要な処理を追加
+	return c.JSON(http.StatusOK, map[string]interface{}{"points": 0}) // 例として0を返す
+}
