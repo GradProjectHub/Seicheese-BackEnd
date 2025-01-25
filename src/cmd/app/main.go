@@ -8,6 +8,7 @@ import (
 	"seicheese/internal/handler"
 	firebase "seicheese/internal/infrastructure"
 	"seicheese/internal/infrastructure/database"
+	"seicheese/internal/middleware"
 	router "seicheese/internal/middleware/router"
 
 	"github.com/labstack/echo/v4"

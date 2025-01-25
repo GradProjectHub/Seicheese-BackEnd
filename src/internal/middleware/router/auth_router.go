@@ -3,48 +3,13 @@
 package router
 
 import (
-	"context"
-	"database/sql"
-	"log"
 	"net/http"
-	"os"
 	"seicheese/internal/handler"
 	"seicheese/internal/middleware"
 
-	firebase "firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/auth"
 	"github.com/labstack/echo/v4"
-	"google.golang.org/api/option"
 )
-
-func NewAuthRouter(e *echo.Echo, db *sql.DB) {
-	// 環境変数から認証情報ファイルのパスを取得
-	credPath := os.Getenv("FIREBASE_SDK_PATH")
-	if credPath == "" {
-		log.Fatalf("FIREBASE_SDK_PATHの環境変数が設定されていません")
-	}
-
-	// Firebase初期化
-	opt := option.WithCredentialsFile(credPath)
-	app, err := firebase.NewApp(context.Background(), nil, opt)
-	if err != nil {
-		log.Fatalf("Error initializing Firebase app: %v\n", err)
-	}
-
-	// AuthClientの初期化
-	authClient, err := app.Auth(context.Background())
-	if err != nil {
-		log.Fatalf("Error initializing Auth client: %v\n", err)
-	}
-
-	// 認証ミドルウェアの初期化
-	authMiddleware := middleware.NewAuthMiddleware(authClient, db)
-
-	// AuthHandlerの初期化とルートの登録
-	authHandler := handler.NewAuthHandler(db, authClient)
-
-	RegisterAuthRoutes(e, authClient, authHandler, authMiddleware)
-}
 
 func RegisterAuthRoutes(e *echo.Echo, authClient *auth.Client, authHandler *handler.AuthHandler, authMiddleware *middleware.AuthMiddleware) {
 	// 認証不要のエンドポイント
