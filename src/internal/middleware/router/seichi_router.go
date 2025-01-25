@@ -15,6 +15,7 @@ func RegisterSeichiRoutes(e *echo.Echo, seichiHandler *handler.SeichiHandler, au
 	// 認証不要のエンドポイント
 	seichiGroup.GET("", seichiHandler.GetSeichies)
 	seichiGroup.GET("/search", seichiHandler.SearchSeichies)
+	seichiGroup.GET("/bounds", seichiHandler.GetSeichiesInBounds)
 
 	// 認証が必要なエンドポイント
 	authGroup := seichiGroup.Group("")

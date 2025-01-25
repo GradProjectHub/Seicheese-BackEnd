@@ -320,30 +320,37 @@ func (h *UserHandler) GetOrCreateUser(ctx context.Context, firebaseID string) (*
 
 // ポイント取得API
 func (h *UserHandler) GetUserPoints(c echo.Context) error {
-	// ユーザーIDをクエリパラメータから取得
-	userIDStr := c.QueryParam("user_id")
-	if userIDStr == "" {
+	// Firebase UIDからユーザーを取得
+	uid := c.Get("uid").(string)
+	if uid == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{
-			"error": "ユーザーIDが必要です",
+			"error": "認証情報が必要です",
 		})
 	}
 
-	userID, err := strconv.Atoi(userIDStr)
+	// Firebase UIDからユーザーを検索
+	user, err := models.Users(
+		models.UserWhere.FirebaseID.EQ(uid),
+	).One(c.Request().Context(), h.DB)
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"error": "不正なユーザーIDです",
+		if err == sql.ErrNoRows {
+			return c.JSON(http.StatusOK, map[string]interface{}{
+				"points": 0,
+			})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "ユーザー情報の取得に失敗しました",
 		})
 	}
 
 	// ポイント情報の取得
 	point, err := models.Points(
-		models.PointWhere.UserID.EQ(userID),
+		models.PointWhere.UserID.EQ(user.UserID),
 	).One(c.Request().Context(), h.DB)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// ポイントが存在しない場合は0を返す
 			return c.JSON(http.StatusOK, map[string]interface{}{
-				"user_id": userID,
 				"points": 0,
 			})
 		}
@@ -353,7 +360,6 @@ func (h *UserHandler) GetUserPoints(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"user_id": userID,
 		"points": point.CurrentPoint,
 	})
 }

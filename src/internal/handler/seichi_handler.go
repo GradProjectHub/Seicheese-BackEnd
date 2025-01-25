@@ -289,21 +289,48 @@ func (h *SeichiHandler) GetSeichies(c echo.Context) error {
 }
 
 // クラスタリング処理を行う関数
-func (h *SeichiHandler) getClusteredSeichies(ctx context.Context, bounds string) ([]map[string]interface{}, error) {
-	// SQLでグリッドベースのクラスタリングを実行
+func (h *SeichiHandler) getClusteredSeichies(ctx context.Context, bounds string, zoom int) ([]map[string]interface{}, error) {
+	// ズームレベルに応じてグリッドサイズを調整
+	gridSize := 1.0
+	switch {
+	case zoom <= 4:
+		gridSize = 10.0  // 最も広域な表示
+	case zoom <= 6:
+		gridSize = 5.0
+	case zoom <= 8:
+		gridSize = 2.0
+	case zoom <= 10:
+		gridSize = 1.0
+	case zoom <= 12:
+		gridSize = 0.5
+	default:
+		gridSize = 0.1   // 最も詳細な表示
+	}
+
+	// 動的なグリッドサイズでクラスタリングを実行
 	query := `
+	WITH clusters AS (
+		SELECT 
+			ROUND(FLOOR(CAST(latitude AS FLOAT) / ?) * ?, 4) as grid_lat,
+			ROUND(FLOOR(CAST(longitude AS FLOAT) / ?) * ?, 4) as grid_lng,
+			COUNT(*) as point_count,
+			array_agg(seichi_id) as seichi_ids
+		FROM seichies
+		GROUP BY 
+			FLOOR(CAST(latitude AS FLOAT) / ?),
+			FLOOR(CAST(longitude AS FLOAT) / ?)
+	)
 	SELECT 
-		ROUND(AVG(CAST(latitude AS FLOAT)), 4) as lat,
-		ROUND(AVG(CAST(longitude AS FLOAT)), 4) as lng,
-		COUNT(*) as count
-	FROM seichies
-	GROUP BY 
-		FLOOR(CAST(latitude AS FLOAT) * 100),
-		FLOOR(CAST(longitude AS FLOAT) * 100)
-	HAVING count > 1
+		grid_lat as latitude,
+		grid_lng as longitude,
+		point_count as count,
+		seichi_ids
+	FROM clusters
+	WHERE point_count > 1
+	ORDER BY point_count DESC
 	`
 
-	rows, err := h.DB.QueryContext(ctx, query)
+	rows, err := h.DB.QueryContext(ctx, query, gridSize, gridSize, gridSize, gridSize, gridSize, gridSize)
 	if err != nil {
 		return nil, err
 	}
@@ -313,14 +340,16 @@ func (h *SeichiHandler) getClusteredSeichies(ctx context.Context, bounds string)
 	for rows.Next() {
 		var lat, lng float64
 		var count int
-		if err := rows.Scan(&lat, &lng, &count); err != nil {
+		var seichiIDs []int
+		if err := rows.Scan(&lat, &lng, &count, &seichiIDs); err != nil {
 			return nil, err
 		}
 		clusters = append(clusters, map[string]interface{}{
-			"latitude":   lat,
-			"longitude":  lng,
+			"latitude":    lat,
+			"longitude":   lng,
 			"count":      count,
 			"is_cluster": true,
+			"seichi_ids": seichiIDs,
 		})
 	}
 	return clusters, nil
@@ -518,6 +547,73 @@ func (h *SeichiHandler) SearchSeichies(c echo.Context) error {
 			CreatedAt:   s.CreatedAt.Time,
 			UpdatedAt:   s.UpdatedAt.Time,
 		})
+	}
+
+	return c.JSON(http.StatusOK, response)
+}
+
+// 表示範囲内の聖地を取得するAPI
+func (h *SeichiHandler) GetSeichiesInBounds(c echo.Context) error {
+	// 地図の表示範囲を取得
+	neLat, _ := strconv.ParseFloat(c.QueryParam("neLat"), 64)
+	neLng, _ := strconv.ParseFloat(c.QueryParam("neLng"), 64)
+	swLat, _ := strconv.ParseFloat(c.QueryParam("swLat"), 64)
+	swLng, _ := strconv.ParseFloat(c.QueryParam("swLng"), 64)
+	zoom, _ := strconv.Atoi(c.QueryParam("zoom"))
+
+	// ズームレベルが一定以下の場合はクラスタリングを適用
+	if zoom <= 13 {
+		clusters, err := h.getClusteredSeichies(c.Request().Context(), "", zoom)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{
+				"error": "クラスタリングの処理に失敗しました",
+			})
+		}
+		return c.JSON(http.StatusOK, clusters)
+	}
+
+	// 表示範囲内の聖地を取得
+	seichies, err := models.Seichies(
+		qm.Load("Content"),
+		qm.Load("Place"),
+		qm.Where("CAST(latitude AS FLOAT) BETWEEN ? AND ? AND CAST(longitude AS FLOAT) BETWEEN ? AND ?",
+			swLat, neLat, swLng, neLng),
+		qm.OrderBy("created_at DESC"),
+	).All(c.Request().Context(), h.DB)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return c.JSON(http.StatusOK, []SeichiResponse{})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "聖地データの取得に失敗しました",
+		})
+	}
+
+	var response []SeichiResponse
+	for _, seichi := range seichies {
+		lat, _ := seichi.Latitude.Float64()
+		lng, _ := seichi.Longitude.Float64()
+		
+		seichiResp := SeichiResponse{
+			ID:          seichi.SeichiID,
+			Name:        seichi.SeichiName,
+			Description: seichi.Comment.String,
+			Latitude:    lat,
+			Longitude:   lng,
+			ContentID:   seichi.ContentID,
+			Address:     seichi.R.Place.Address,
+			PostalCode:  seichi.R.Place.ZipCode,
+			CreatedAt:   seichi.CreatedAt,
+			UpdatedAt:   seichi.UpdatedAt,
+		}
+
+		if seichi.R.Content != nil {
+			seichiResp.ContentName = seichi.R.Content.ContentName
+			seichiResp.GenreID = seichi.R.Content.GenreID
+		}
+
+		response = append(response, seichiResp)
 	}
 
 	return c.JSON(http.StatusOK, response)
