@@ -172,6 +172,7 @@ func (h *AuthHandler) findOrCreateUser(ctx context.Context, token *auth.Token) (
 	user, point, isNew, err := userHandler.RegisterUser(req)
 	if err != nil {
 		log.Printf("ユーザー登録エラー: %v", err)
+		log.Printf("RegisterUser呼び出しエラー: %v", err)
 		return nil, nil, false, fmt.Errorf("ユーザー登録エラー: %v", err)
 	}
 

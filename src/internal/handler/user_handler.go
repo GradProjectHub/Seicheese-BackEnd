@@ -49,6 +49,7 @@ func (h *UserHandler) RegisterUser(c echo.Context) error {
 	).Exists(c.Request().Context(), h.DB)
 	if err != nil {
 		log.Printf("Error checking user existence: %v", err)
+		log.Printf("ユーザー存在確認クエリエラー: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "ユーザー情報の確認に失敗しました",
 		})
@@ -64,6 +65,7 @@ func (h *UserHandler) RegisterUser(c echo.Context) error {
 	tx, err := h.DB.BeginTx(c.Request().Context(), nil)
 	if err != nil {
 		log.Printf("Error starting transaction: %v", err)
+		log.Printf("トランザクション開始エラー: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "トランザクションの開始に失敗しました",
 		})
