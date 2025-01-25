@@ -41,10 +41,7 @@ func NewAuthRouter(e *echo.Echo, db *sql.DB) {
 	authMiddleware := middleware.NewAuthMiddleware(authClient, db)
 
 	// AuthHandlerの初期化とルートの登録
-	authHandler := &handler.AuthHandler{
-		DB:         db,
-		AuthClient: authClient,
-	}
+	authHandler := handler.NewAuthHandler(db, authClient)
 
 	RegisterAuthRoutes(e, authClient, authHandler, authMiddleware)
 }
