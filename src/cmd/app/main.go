@@ -15,6 +15,9 @@ import (
 )
 
 func main() {
+	// ログを標準出力に設定
+	log.SetOutput(os.Stdout)
+
 	e := echo.New()
 
 	// CORS設定
