@@ -54,33 +54,35 @@ func (m *AuthMiddleware) FirebaseAuthMiddleware() echo.MiddlewareFunc {
 				return echo.NewHTTPError(http.StatusUnauthorized, err.Error())
 			}
 
-			// ユーザーの存在確認
+			// ユーザーの存在確認と作成をトランザクション内で行う
+			tx, err := m.DB.BeginTx(c.Request().Context(), nil)
+			if err != nil {
+				log.Printf("トランザクション開始エラー: %v", err)
+				return echo.NewHTTPError(http.StatusInternalServerError, "トランザクション開始に失敗しました")
+			}
+
+			// トランザクションのロールバック処理
+			var txErr error
+			defer func() {
+				if tx != nil && txErr != nil {
+					if rbErr := tx.Rollback(); rbErr != nil {
+						log.Printf("トランザクションのロールバックに失敗: %v", rbErr)
+					}
+				}
+			}()
+
+			// トランザクション内でユーザーの存在確認
 			exists, err := models.Users(
 				qm.Where("firebase_id = ?", tokenVerified.UID),
-			).Exists(c.Request().Context(), m.DB)
+			).Exists(c.Request().Context(), tx)
 			if err != nil {
+				txErr = err
 				log.Printf("ユーザー存在確認エラー: %v", err)
 				return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の確認に失敗しました")
 			}
-			if !exists {
-				log.Printf("ユーザーが存在しないため、新規ユーザー作成処理に進みます")
-				
-				// トランザクション開始
-				tx, err := m.DB.BeginTx(c.Request().Context(), nil)
-				if err != nil {
-					log.Printf("トランザクション開始エラー: %v", err)
-					return echo.NewHTTPError(http.StatusInternalServerError, "トランザクション開始に失敗しました")
-				}
 
-				// トランザクションのロールバック処理
-				var txErr error
-				defer func() {
-					if tx != nil && txErr != nil {
-						if rbErr := tx.Rollback(); rbErr != nil {
-							log.Printf("トランザクションのロールバックに失敗: %v", rbErr)
-						}
-					}
-				}()
+			if !exists {
+				log.Printf("ユーザーが存在しないため、新規ユーザー作成処理に進みます: firebase_id=%s", tokenVerified.UID)
 
 				// 新規ユーザーの作成
 				now := time.Now()
@@ -92,21 +94,31 @@ func (m *AuthMiddleware) FirebaseAuthMiddleware() echo.MiddlewareFunc {
 
 				if err := newUser.Insert(c.Request().Context(), tx, boil.Infer()); err != nil {
 					txErr = err
-					log.Printf("ユーザー作成エラー: %v", err)
-					return echo.NewHTTPError(http.StatusInternalServerError, "ユーザーの登録に失敗しました")
+					if strings.Contains(err.Error(), "Duplicate entry") {
+						log.Printf("ユーザーが既に存在します（競合）: firebase_id=%s", tokenVerified.UID)
+						// 競合が発生した場合は正常なケースとして扱う
+						if rbErr := tx.Rollback(); rbErr != nil {
+							log.Printf("トランザクションのロールバックに失敗: %v", rbErr)
+						}
+						tx = nil
+					} else {
+						log.Printf("ユーザー作成エラー: %v", err)
+						return echo.NewHTTPError(http.StatusInternalServerError, "ユーザーの登録に失敗しました")
+					}
+				} else {
+					log.Printf("新規ユーザー作成完了: user_id=%d, firebase_id=%s", newUser.UserID, newUser.FirebaseID)
 				}
+			} else {
+				log.Printf("ユーザーが存在します: firebase_id=%s", tokenVerified.UID)
+			}
 
-				// トランザクションをコミット
+			// トランザクションが残っている場合はコミット
+			if tx != nil {
 				if err := tx.Commit(); err != nil {
 					txErr = err
 					log.Printf("トランザクションのコミットに失敗: %v", err)
 					return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションのコミットに失敗しました")
 				}
-				tx = nil
-
-				log.Printf("新規ユーザー登録完了: user_id=%d, firebase_id=%s", newUser.UserID, newUser.FirebaseID)
-			} else {
-				log.Printf("ユーザーが存在します: firebase_id=%s", tokenVerified.UID)
 			}
 
 			c.Set("firebase_token", idToken)
