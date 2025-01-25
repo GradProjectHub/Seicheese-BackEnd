@@ -167,65 +167,11 @@ func (h *AuthHandler) findOrCreateUser(ctx context.Context, token *auth.Token) (
 
 	log.Printf("新規ユーザー作成開始: firebase_id=%s", token.UID)
 
-	// トランザクション開始
-	tx, err := h.DB.BeginTx(ctx, nil)
-	if err != nil {
-		log.Printf("トランザクション開始エラー: %v", err)
-		return nil, nil, false, fmt.Errorf("トランザクション開始に失敗しました: %v", err)
-	}
-
-	defer func() {
-		if tx != nil {
-			if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
-				log.Printf("トランザクションのロールバックに失敗: %v", err)
-			}
-		}
-	}()
-
-	// 新規ユーザーの作成
-	now := null.TimeFrom(time.Now())
-	newUser := &models.User{
-		FirebaseID: token.UID,
-		CreatedAt:  now,
-		UpdatedAt:  now,
-	}
-
-	if err := newUser.Insert(ctx, tx, boil.Infer()); err != nil {
-		log.Printf("ユーザー作成エラー: %v", err)
-		return nil, nil, false, fmt.Errorf("ユーザー作成エラー: %v", err)
-	}
-
-	// トランザクションをコミット
-	if err := tx.Commit(); err != nil {
-		log.Printf("トランザクションのコミットに失敗: %v", err)
-		return nil, nil, false, fmt.Errorf("トランザクションのコミットに失敗: %v", err)
-	}
-	tx = nil // Prevent rollback after successful commit
-
-	log.Printf("新規ユーザー作成完了: user_id=%d, firebase_id=%s", newUser.UserID, newUser.FirebaseID)
-
-	// トリガーの実行を待機
-	time.Sleep(100 * time.Millisecond)
-
-	// ポイント情報の取得を複数回試行
-	var point *models.Point
-	var pointErr error
-	for i := 0; i < 5; i++ {
-		point, pointErr = models.Points(
-			qm.Where("user_id = ?", newUser.UserID),
-		).One(ctx, h.DB)
-		if pointErr == nil {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	if pointErr != nil {
-		log.Printf("ポイント情報の取得に失敗: %v", pointErr)
-		return nil, nil, false, fmt.Errorf("ポイント情報の取得に失敗: %v", pointErr)
-	}
-
-	log.Printf("新規ユーザーのポイント情報取得完了: user_id=%d", newUser.UserID)
-	return newUser, point, true, nil
+	// ユーザー登録を呼び出す
+	userHandler := &UserHandler{DB: h.DB}
+	req := echo.Context{}
+	req.Set("uid", token.UID)
+	return userHandler.RegisterUser(&req)
 }
 
 // ユーザーロールの検証
