@@ -140,8 +140,6 @@ func (h *CheckinHandler) Checkin(c echo.Context) error {
 		UserID:    user.UserID,
 		SeichiID:  req.SeichiID,
 		CreatedAt: time.Now(),
-		Points:    points,
-		StampID:   stampID,
 	}
 
 	// トランザクション開始
@@ -188,9 +186,13 @@ func (h *CheckinHandler) Checkin(c echo.Context) error {
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"message": "チェックイン成功",
-		"checkin": checkinLog,
-		"points_earned": points,
+		"checkin": map[string]interface{}{
+			"created_at": checkinLog.CreatedAt,
+			"user_id": checkinLog.UserID,
+			"seichi_id": checkinLog.SeichiID,
+			"points_earned": points,
+			"stamp_id": stampID,
+		},
 		"total_points": userPoint.CurrentPoint,
-		"stamp_id": stampID,
 	})
 }
