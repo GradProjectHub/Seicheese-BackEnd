@@ -9,11 +9,14 @@ import (
 )
 
 func RegisterCheckinRoutes(e *echo.Echo, checkinHandler *handler.CheckinHandler, authClient *auth.Client) {
+	// 認証ミドルウェアの初期化
+	authMiddleware := middleware.NewAuthMiddleware(authClient, checkinHandler.DB)
+
 	// チェックイン関連のルーティンググループ
-	checkinGroup := e.Group("/api/checkins")
+	checkinGroup := e.Group("/checkins")
 
 	// すべてのエンドポイントで認証が必要
-	checkinGroup.Use(middleware.FirebaseAuthMiddleware(authClient))
+	checkinGroup.Use(authMiddleware.FirebaseAuthMiddleware())
 
 	// チェックイン履歴の取得
 	checkinGroup.GET("", checkinHandler.GetUserCheckins)

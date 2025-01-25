@@ -10,9 +10,18 @@ import (
 )
 
 func RegisterContentRoutes(e *echo.Echo, contentHandler *handler.ContentHandler, authClient *auth.Client) {
-	contentGroup := e.Group("/api/contents")
-	contentGroup.Use(middleware.FirebaseAuthMiddleware(authClient))
+	// 認証ミドルウェアの初期化
+	authMiddleware := middleware.NewAuthMiddleware(authClient, contentHandler.DB)
 
-	contentGroup.GET("/search", contentHandler.SearchContents)
-	contentGroup.POST("/register", contentHandler.RegisterContent)
+	// コンテンツ関連のルーティンググループ
+	contentGroup := e.Group("/contents")
+
+	// すべてのエンドポイントで認証が必要
+	contentGroup.Use(authMiddleware.FirebaseAuthMiddleware())
+
+	// コンテンツの取得
+	contentGroup.GET("", contentHandler.GetContents)
+
+	// コンテンツの登録
+	contentGroup.POST("", contentHandler.RegisterContent)
 }
