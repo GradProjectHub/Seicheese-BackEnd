@@ -162,9 +162,24 @@ func (h *UserHandler) GetUser(c echo.Context) error {
 		})
 	}
 
-	return c.JSON(http.StatusOK, UserResponse{
-		ID:        user.UserID,
-		CreatedAt: user.CreatedAt.Time,
-		UpdatedAt: user.UpdatedAt.Time,
+	// ポイント情報の取得
+	point, err := models.Points(
+		models.PointWhere.UserID.EQ(user.UserID),
+	).One(c.Request().Context(), h.DB)
+	if err != nil && err != sql.ErrNoRows {
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "ポイント情報の取得に失敗しました",
+		})
+	}
+
+	currentPoints := 0
+	if point != nil {
+		currentPoints = point.CurrentPoint
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"user_id":    user.UserID,
+		"points":     currentPoints,
+		"created_at": user.CreatedAt,
 	})
 }

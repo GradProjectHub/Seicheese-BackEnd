@@ -157,10 +157,29 @@ func (h *CheckinHandler) Checkin(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "チェックイン処理に失敗")
 	}
 
-	// ユーザーのポイントを更新
-	user.Points += points
-	if err := user.Update(ctx, tx, boil.Infer()); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "ポイント更新に失敗")
+	// ユーザーのポイントを取得
+	userPoint, err := models.Points(
+		models.PointWhere.UserID.EQ(user.UserID),
+	).One(ctx, tx)
+	if err != nil && err != sql.ErrNoRows {
+		return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の取得に失敗")
+	}
+
+	// ポイントレコードが存在しない場合は新規作成
+	if err == sql.ErrNoRows {
+		userPoint = &models.Point{
+			UserID: user.UserID,
+			CurrentPoint: points,
+		}
+		if err := userPoint.Insert(ctx, tx, boil.Infer()); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の作成に失敗")
+		}
+	} else {
+		// 既存のポイントを更新
+		userPoint.CurrentPoint += points
+		if _, err := userPoint.Update(ctx, tx, boil.Infer()); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "ポイント更新に失敗")
+		}
 	}
 
 	// トランザクションのコミット
@@ -172,7 +191,7 @@ func (h *CheckinHandler) Checkin(c echo.Context) error {
 		"message": "チェックイン成功",
 		"checkin": checkinLog,
 		"points_earned": points,
-		"total_points": user.Points,
+		"total_points": userPoint.CurrentPoint,
 		"stamp_id": stampID,
 	})
 }

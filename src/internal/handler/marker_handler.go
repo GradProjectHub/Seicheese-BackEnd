@@ -27,10 +27,23 @@ func (h *MarkerHandler) GetMarkers(c echo.Context) error {
         return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の取得に失敗しました")
     }
 
+    // ユーザーのポイントを取得
+    userPoint, err := models.Points(
+        models.PointWhere.UserID.EQ(user.UserID),
+    ).One(ctx, h.DB)
+    if err != nil && err != sql.ErrNoRows {
+        return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の取得に失敗")
+    }
+
+    currentPoints := 0
+    if userPoint != nil {
+        currentPoints = userPoint.CurrentPoint
+    }
+
     // 利用可能なマーカーを取得
-    markers, err := models.GetAvailableMarkers(ctx, h.DB, user.Points)
+    markers, err := models.GetAvailableMarkers(ctx, h.DB, currentPoints)
     if err != nil {
-        return echo.NewHTTPError(http.StatusInternalServerError, "マーカー情報の取得に失敗しました")
+        return echo.NewHTTPError(http.StatusInternalServerError, "マーカー情報の取得に失敗")
     }
 
     return c.JSON(http.StatusOK, markers)
@@ -47,11 +60,15 @@ func (h *MarkerHandler) GetMarkerImage(c echo.Context) error {
         return echo.NewHTTPError(http.StatusBadRequest, "不正なマーカーIDです")
     }
 
+    // マーカー画像の取得
     marker, err := models.Markers(
-        models.MarkerWhere.ID.EQ(id),
+        models.MarkerWhere.ID.EQ(strconv.Itoa(id)),
     ).One(ctx, h.DB)
     if err != nil {
-        return echo.NewHTTPError(http.StatusNotFound, "マーカーが見つかりません")
+        if err == sql.ErrNoRows {
+            return echo.NewHTTPError(http.StatusNotFound, "マーカーが見つかりません")
+        }
+        return echo.NewHTTPError(http.StatusInternalServerError, "マーカー情報の取得に失敗")
     }
 
     // 画像ファイルのパスを構築
