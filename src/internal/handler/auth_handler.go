@@ -35,8 +35,17 @@ func (h *AuthHandler) createInitialPoint(ctx context.Context, tx *sql.Tx, userID
 		VALUES (?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 	`
 	
-	log.Printf("ポイントレコード作成開始: user_id=%d", userID)
-	result, err := tx.ExecContext(ctx, query, userID)
+	log.Printf("ポイントレコード作成開始: user_id=%d, SQL=%s", userID, query)
+	
+	// プリペアドステートメントを使用
+	stmt, err := tx.PrepareContext(ctx, query)
+	if err != nil {
+		log.Printf("プリペアドステートメント作成エラー: %v", err)
+		return fmt.Errorf("failed to prepare statement: %v", err)
+	}
+	defer stmt.Close()
+	
+	result, err := stmt.ExecContext(ctx, userID)
 	if err != nil {
 		log.Printf("ポイントレコード作成エラー: %v", err)
 		return fmt.Errorf("failed to create point record: %v", err)
@@ -44,8 +53,11 @@ func (h *AuthHandler) createInitialPoint(ctx context.Context, tx *sql.Tx, userID
 	
 	affected, err := result.RowsAffected()
 	if err != nil {
+		log.Printf("影響を受けた行数の取得に失敗: %v", err)
 		return fmt.Errorf("failed to get affected rows: %v", err)
 	}
+	
+	log.Printf("ポイントレコード作成結果: affected=%d", affected)
 	if affected != 1 {
 		return fmt.Errorf("expected 1 row to be affected, got %d", affected)
 	}
