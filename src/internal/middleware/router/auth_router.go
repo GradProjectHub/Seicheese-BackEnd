@@ -50,18 +50,19 @@ func NewAuthRouter(e *echo.Echo, db *sql.DB) {
 }
 
 func RegisterAuthRoutes(e *echo.Echo, authClient *auth.Client, authHandler *handler.AuthHandler, authMiddleware *middleware.AuthMiddleware) {
-	// ヘルスチェックエンドポイントを追加（認証不要）
+	// ヘルスチェック（認証不要）
 	e.GET("/health", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{
 			"status": "ok",
 		})
 	})
 
-	// バックエンドでのトークンとバージョンの検証エンドポイントを追加
-	e.POST("/auth/validate", authHandler.ValidateToken)
+	// 認証関連のエンドポイント（認証不要）
+	auth := e.Group("/auth")
+	auth.POST("/validate", authHandler.ValidateToken)
+	auth.POST("/signin", authHandler.SignIn)        // サインイン（新規登録も含む）
 
-	authGroup := e.Group("")
-	authGroup.Use(authMiddleware.FirebaseAuthMiddleware())
-	// ハンドラーの割り当て
-	authGroup.POST("/auth/signin", authHandler.SignIn)
+	// 認証が必要なエンドポイント
+	api := e.Group("/api")
+	api.Use(authMiddleware.FirebaseAuthMiddleware())
 }

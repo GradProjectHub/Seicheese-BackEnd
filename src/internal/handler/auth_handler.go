@@ -47,7 +47,106 @@ func (h *AuthHandler) createInitialPoint(ctx context.Context, tx *sql.Tx, user *
 	return nil
 }
 
-// SignIn handler
+// RegisterUser handles new user registration
+func (h *AuthHandler) RegisterUser(c echo.Context) error {
+	ctx := c.Request().Context()
+	log.Printf("新規ユーザー登録処理開始")
+
+	// トークンの取得と検証
+	authHeader := c.Request().Header.Get("Authorization")
+	if authHeader == "" {
+		log.Printf("トークンが見つかりません")
+		return echo.NewHTTPError(http.StatusUnauthorized, "トークンが必要です")
+	}
+	token := strings.TrimPrefix(authHeader, "Bearer ")
+
+	verifiedToken, err := h.AuthClient.VerifyIDToken(ctx, token)
+	if err != nil {
+		log.Printf("トークン検証エラー: %v", err)
+		return echo.NewHTTPError(http.StatusUnauthorized, "無効なトークンです")
+	}
+	log.Printf("トークン検証成功: firebase_id=%s", verifiedToken.UID)
+
+	// ユーザーの存在確認
+	exists, err := models.Users(
+		models.UserWhere.FirebaseID.EQ(verifiedToken.UID),
+	).Exists(ctx, h.DB)
+	if err != nil {
+		log.Printf("ユーザー存在確認エラー: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の確認に失敗しました")
+	}
+	if exists {
+		log.Printf("ユーザーが既に存在します: firebase_id=%s", verifiedToken.UID)
+		return echo.NewHTTPError(http.StatusConflict, "既に登録されているユーザーです")
+	}
+
+	// トランザクション開始
+	tx, err := h.DB.BeginTx(ctx, nil)
+	if err != nil {
+		log.Printf("トランザクション開始エラー: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクション開始に失敗しました")
+	}
+
+	var txErr error
+	defer func() {
+		if tx != nil && txErr != nil {
+			if rbErr := tx.Rollback(); rbErr != nil {
+				log.Printf("トランザクションのロールバックに失敗: %v", rbErr)
+			} else {
+				log.Printf("トランザクションをロールバックしました")
+			}
+		}
+	}()
+
+	// ユーザーを作成
+	now := time.Now()
+	user := &models.User{
+		FirebaseID: verifiedToken.UID,
+		CreatedAt:  null.TimeFrom(now),
+		UpdatedAt:  null.TimeFrom(now),
+	}
+
+	if err := user.Insert(ctx, tx, boil.Infer()); err != nil {
+		txErr = err
+		log.Printf("ユーザー作成エラー: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザーの登録に失敗しました")
+	}
+
+	log.Printf("ユーザーを作成しました: user_id=%d", user.UserID)
+
+	// トランザクションをコミット
+	if err := tx.Commit(); err != nil {
+		txErr = err
+		log.Printf("トランザクションのコミットに失敗: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションのコミットに失敗しました")
+	}
+	tx = nil
+
+	log.Printf("トランザクションをコミットしました")
+
+	// トリガーの実行を待機
+	time.Sleep(100 * time.Millisecond)
+
+	// ポイント情報の取得
+	point, err := models.Points(
+		models.PointWhere.UserID.EQ(user.UserID),
+	).One(ctx, h.DB)
+	if err != nil {
+		log.Printf("ポイント情報の取得に失敗: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の取得に失敗しました")
+	}
+
+	return c.JSON(http.StatusCreated, map[string]interface{}{
+		"message": "ユーザーを新規登録しました",
+		"user": map[string]interface{}{
+			"user_id":    user.UserID,
+			"created_at": user.CreatedAt.Time,
+		},
+		"point": point,
+	})
+}
+
+
 func (h *AuthHandler) SignIn(c echo.Context) error {
 	ctx := c.Request().Context()
 	log.Printf("サインイン処理開始")
@@ -59,7 +158,6 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "トークンが必要です")
 	}
 	token := strings.TrimPrefix(authHeader, "Bearer ")
-	log.Printf("トークン取得完了: %s", token[:10]) // トークンの最初の10文字のみログ出力
 
 	verifiedToken, err := h.AuthClient.VerifyIDToken(ctx, token)
 	if err != nil {
@@ -68,29 +166,140 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 	}
 	log.Printf("トークン検証成功: firebase_id=%s", verifiedToken.UID)
 
-	// ユーザーの取得または作成を試行
-	log.Printf("findOrCreateUser呼び出し開始: firebase_id=%s", verifiedToken.UID)
-	user, point, isNew, err := h.findOrCreateUser(ctx, verifiedToken)
+	// ユーザー情報の取得または作成
+	user, err := models.Users(
+		models.UserWhere.FirebaseID.EQ(verifiedToken.UID),
+	).One(ctx, h.DB)
+
+	isNewUser := false
+	if err == sql.ErrNoRows {
+		log.Printf("新規ユーザーとして処理開始: firebase_id=%s", verifiedToken.UID)
+		
+		// トランザクション開始
+		tx, err := h.DB.BeginTx(ctx, nil)
+		if err != nil {
+			log.Printf("トランザクション開始エラー: %v", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "トランザクション開始に失敗しました")
+		}
+
+		var txErr error
+		defer func() {
+			if tx != nil && txErr != nil {
+				if rbErr := tx.Rollback(); rbErr != nil {
+					log.Printf("トランザクションのロールバックに失敗: %v", rbErr)
+				} else {
+					log.Printf("トランザクションをロールバックしました")
+				}
+			}
+		}()
+
+		// 新規ユーザーの作成
+		now := time.Now()
+		user = &models.User{
+			FirebaseID: verifiedToken.UID,
+			CreatedAt:  null.TimeFrom(now),
+			UpdatedAt:  null.TimeFrom(now),
+		}
+
+		if err := user.Insert(ctx, tx, boil.Infer()); err != nil {
+			txErr = err
+			log.Printf("ユーザー作成エラー: %v", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "ユーザーの登録に失敗しました")
+		}
+
+		log.Printf("ユーザーを作成しました: user_id=%d", user.UserID)
+
+		// トランザクションをコミット
+		if err := tx.Commit(); err != nil {
+			txErr = err
+			log.Printf("トランザクションのコミットに失敗: %v", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションのコミットに失敗しました")
+		}
+		tx = nil
+		isNewUser = true
+
+		log.Printf("トランザクションをコミットしました")
+
+		// トリガーの実行を待機
+		time.Sleep(100 * time.Millisecond)
+	} else if err != nil {
+		log.Printf("ユーザー情報の取得に失敗: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の取得に失敗しました")
+	}
+
+	// ポイント情報の取得（リトライ付き）
+	var point *models.Point
+	var pointErr error
+	for i := 0; i < 5; i++ {
+		point, pointErr = models.Points(
+			models.PointWhere.UserID.EQ(user.UserID),
+		).One(ctx, h.DB)
+		if pointErr == nil {
+			break
+		}
+		if !isNewUser {
+			// 既存ユーザーの場合は即時エラー
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if pointErr != nil {
+		log.Printf("ポイント情報の取得に失敗: %v", pointErr)
+		return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の取得に失敗しました")
+	}
+
+	status := http.StatusOK
+	message := "サインインに成功しました"
+	if isNewUser {
+		status = http.StatusCreated
+		message = "新規ユーザーとして登録しました"
+	}
+
+	return c.JSON(status, map[string]interface{}{
+		"message": message,
+		"user": map[string]interface{}{
+			"user_id":    user.UserID,
+			"created_at": user.CreatedAt.Time,
+		},
+		"point": point,
+	})
+}
+
+// GetCurrentUser handles getting the current user's information
+func (h *AuthHandler) GetCurrentUser(c echo.Context) error {
+	ctx := c.Request().Context()
+	uid := c.Get("uid").(string)
+
+	user, err := models.Users(
+		models.UserWhere.FirebaseID.EQ(uid),
+	).One(ctx, h.DB)
 	if err != nil {
-		log.Printf("ユーザー取得/作成エラー: %v", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の処理に失敗しました")
-	}
-	log.Printf("findOrCreateUser呼び出し完了: firebase_id=%s, is_new=%v", verifiedToken.UID, isNew)
-
-	if isNew {
-		log.Printf("新規ユーザー登録完了: user_id=%d, firebase_id=%s", user.UserID, user.FirebaseID)
-		return c.JSON(http.StatusCreated, map[string]interface{}{
-			"message": "ユーザーを新規登録しました",
-			"user":    user,
-			"point":   point,
-		})
+		log.Printf("ユーザー情報の取得に失敗: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の取得に失敗しました")
 	}
 
-	log.Printf("既存ユーザーのサインイン完了: user_id=%d, firebase_id=%s", user.UserID, user.FirebaseID)
+	point, err := models.Points(
+		models.PointWhere.UserID.EQ(user.UserID),
+	).One(ctx, h.DB)
+	if err != nil {
+		log.Printf("ポイント情報の取得に失敗: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の取得に失敗しました")
+	}
+
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"message": "サインインに成功しました",
-		"user":    user,
-		"point":   point,
+		"user": map[string]interface{}{
+			"user_id":    user.UserID,
+			"created_at": user.CreatedAt.Time,
+		},
+		"point": point,
+	})
+}
+
+// UpdateUser handles updating the current user's information
+func (h *AuthHandler) UpdateUser(c echo.Context) error {
+	// TODO: Implement user update logic
+	return c.JSON(http.StatusNotImplemented, map[string]string{
+		"message": "未実装の機能です",
 	})
 }
 
