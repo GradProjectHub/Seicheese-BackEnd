@@ -28,22 +28,22 @@ type AuthHandler struct {
 }
 
 // ポイント情報作成用の関数
-func (h *AuthHandler) createInitialPoint(ctx context.Context, tx *sql.Tx, userID int) error {
-	log.Printf("ポイントレコード作成開始: user_id=%d", userID)
+func (h *AuthHandler) createInitialPoint(ctx context.Context, tx *sql.Tx, user *models.User) error {
+	log.Printf("ポイントレコード作成開始: user_id=%d", user.UserID)
 	
 	point := &models.Point{
-		UserID:       uint(userID),
+		UserID:       user.UserID,
 		CurrentPoint: 0,
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
 	}
 	
-	if err := point.Insert(ctx, tx, boil.Infer()); err != nil {
+	if err := user.SetPoint(ctx, tx, true, point); err != nil {
 		log.Printf("ポイントレコード作成エラー: %v", err)
 		return fmt.Errorf("failed to create point record: %v", err)
 	}
 	
-	log.Printf("ポイントレコード作成完了: user_id=%d", userID)
+	log.Printf("ポイントレコード作成完了: user_id=%d", user.UserID)
 	return nil
 }
 
@@ -111,7 +111,7 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 		log.Printf("ユーザー作成完了: user_id=%d", newUser.UserID)
 
 		// ポイント情報作成
-		if err := h.createInitialPoint(ctx, tx, newUser.UserID); err != nil {
+		if err := h.createInitialPoint(ctx, tx, newUser); err != nil {
 			log.Printf("ポイント情報作成エラー: %v", err)
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
