@@ -29,32 +29,36 @@ type AuthHandler struct {
 
 // SignIn handler
 func (h *AuthHandler) SignIn(c echo.Context) error {
+	ctx := c.Request().Context()
+	requestID := c.Response().Header().Get(echo.HeaderXRequestID)
+
 	// トークンの取得
 	authHeader := c.Request().Header.Get("Authorization")
 	if authHeader == "" {
+		c.Logger().Error("トークンが見つかりません", "request_id", requestID)
 		return echo.NewHTTPError(http.StatusUnauthorized, "トークンが必要です")
 	}
 	token := strings.TrimPrefix(authHeader, "Bearer ")
 
 	// トークン検証
-	verifiedToken, err := h.AuthClient.VerifyIDToken(c.Request().Context(), token)
+	verifiedToken, err := h.AuthClient.VerifyIDToken(ctx, token)
 	if err != nil {
-		log.Printf("Token verification failed: %v", err)
+		c.Logger().Error("トークン検証エラー", "request_id", requestID, "error", err)
 		return echo.NewHTTPError(http.StatusUnauthorized, "無効なトークンです")
 	}
-	log.Printf("Token verified for UID: %s", verifiedToken.UID)
+	c.Logger().Info("トークン検証成功", "request_id", requestID, "firebase_id", verifiedToken.UID)
 
 	// ユーザーの存在確認
 	user, err := models.Users(
 		qm.Where("firebase_id = ?", verifiedToken.UID),
-	).One(c.Request().Context(), h.DB)
+	).One(ctx, h.DB)
 
 	if err == sql.ErrNoRows {
-		log.Printf("新規ユーザー登録開始: firebase_id=%s", verifiedToken.UID)
+		c.Logger().Info("新規ユーザー登録開始", "request_id", requestID, "firebase_id", verifiedToken.UID)
 		
-		tx, err := h.DB.BeginTx(c.Request().Context(), nil)
+		tx, err := h.DB.BeginTx(ctx, nil)
 		if err != nil {
-			log.Printf("トランザクション開始エラー: %v", err)
+			c.Logger().Error("トランザクション開始エラー", "request_id", requestID, "error", err)
 			return echo.NewHTTPError(http.StatusInternalServerError, "データベースエラー")
 		}
 		
@@ -63,9 +67,9 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 		defer func() {
 			if txErr != nil {
 				if rbErr := tx.Rollback(); rbErr != nil {
-					log.Printf("ロールバックエラー: %v", rbErr)
+					c.Logger().Error("ロールバックエラー", "request_id", requestID, "error", rbErr)
 				}
-				log.Printf("トランザクションロールバック完了")
+				c.Logger().Info("トランザクションロールバック完了", "request_id", requestID)
 			}
 		}()
 
@@ -75,14 +79,14 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 			IsAdmin:    false,
 		}
 		
-		log.Printf("ユーザーレコード作成開始")
-		err = user.Insert(c.Request().Context(), tx, boil.Infer())
+		c.Logger().Info("ユーザーレコード作成開始", "request_id", requestID)
+		err = user.Insert(ctx, tx, boil.Infer())
 		if err != nil {
 			txErr = err
-			log.Printf("ユーザーレコード作成エラー: %v", err)
+			c.Logger().Error("ユーザーレコード作成エラー", "request_id", requestID, "error", err)
 			return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー作成に失敗しました")
 		}
-		log.Printf("ユーザーレコード作成完了: user_id=%d", user.UserID)
+		c.Logger().Info("ユーザーレコード作成完了", "request_id", requestID, "user_id", user.UserID)
 
 		// ポイントレコードの作成
 		point := &models.Point{
@@ -90,35 +94,34 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 			CurrentPoint: 0,
 		}
 		
-		log.Printf("ポイントレコード作成開始: user_id=%d", user.UserID)
-		err = point.Insert(c.Request().Context(), tx, boil.Infer())
+		c.Logger().Info("ポイントレコード作成開始", "request_id", requestID, "user_id", user.UserID)
+		err = point.Insert(ctx, tx, boil.Infer())
 		if err != nil {
 			txErr = err
-			log.Printf("ポイントレコード作成エラー: %v", err)
+			c.Logger().Error("ポイントレコード作成エラー", "request_id", requestID, "error", err)
 			return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の作成に失敗しました")
 		}
-		log.Printf("ポイントレコード作成完了")
+		c.Logger().Info("ポイントレコード作成完了", "request_id", requestID)
 
 		// トランザクションのコミット
 		err = tx.Commit()
 		if err != nil {
 			txErr = err
-			log.Printf("トランザクションコミットエラー: %v", err)
+			c.Logger().Error("トランザクションコミットエラー", "request_id", requestID, "error", err)
 			return echo.NewHTTPError(http.StatusInternalServerError, "データベースエラー")
 		}
-		log.Printf("トランザクションコミット完了")
+		c.Logger().Info("トランザクションコミット完了", "request_id", requestID)
 
 		return c.JSON(http.StatusCreated, map[string]interface{}{
 			"message": "ユーザーを新規登録しました",
 			"user":    user,
 		})
 	} else if err != nil {
-		log.Printf("Database error while looking up user: %v", err)
+		c.Logger().Error("データベースエラー", "request_id", requestID, "error", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "データベースエラー")
 	}
 
-	log.Printf("Existing user found: %+v", user)
-	// 既存ユーザーの場合は通常のサインイン処理
+	c.Logger().Info("既存ユーザーのサインイン成功", "request_id", requestID, "user_id", user.UserID)
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"message": "サインインに成功しました",
 		"user":    user,
