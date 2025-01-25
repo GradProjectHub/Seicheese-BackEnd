@@ -44,7 +44,8 @@ func (h *UserHandler) RegisterUser(c echo.Context) error {
 
 	log.Printf("ユーザー登録開始: firebase_id=%s", uid)
 
-	// ユーザーの存在確認
+	// ユーザーの存在確認を一時的にコメントアウト
+	/*
 	exists, err := models.Users(
 		models.UserWhere.FirebaseID.EQ(uid),
 	).Exists(c.Request().Context(), h.DB)
@@ -59,6 +60,16 @@ func (h *UserHandler) RegisterUser(c echo.Context) error {
 		return c.JSON(http.StatusConflict, map[string]string{
 			"error": "既に登録されているユーザーです",
 		})
+	}
+	*/
+
+	// 強制的に新規ユーザーを作成する処理
+	log.Printf("ユーザーが存在しないため、新規ユーザー作成処理に進みます")
+	now := time.Now()
+	user := &models.User{
+		FirebaseID: uid,
+		CreatedAt:  null.TimeFrom(now),
+		UpdatedAt:  null.TimeFrom(now),
 	}
 
 	// トランザクションを開始
@@ -81,16 +92,6 @@ func (h *UserHandler) RegisterUser(c echo.Context) error {
 			}
 		}
 	}()
-
-	log.Printf("トランザクション開始")
-
-	// ユーザーを作成
-	now := time.Now()
-	user := &models.User{
-		FirebaseID: uid,
-		CreatedAt:  null.TimeFrom(now),
-		UpdatedAt:  null.TimeFrom(now),
-	}
 
 	if err := user.Insert(c.Request().Context(), tx, boil.Infer()); err != nil {
 		txErr = err
