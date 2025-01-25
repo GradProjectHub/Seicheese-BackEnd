@@ -17,6 +17,8 @@ import (
 
 	"firebase.google.com/go/v4/auth"
 	"github.com/labstack/echo/v4"
+	"github.com/volatiletech/null/v8"
+	"github.com/volatiletech/sqlboiler/v4/boil"
 	"github.com/volatiletech/sqlboiler/v4/queries/qm"
 )
 
@@ -28,16 +30,19 @@ type AuthHandler struct {
 // ポイント情報作成用の関数
 func (h *AuthHandler) createInitialPoint(ctx context.Context, tx *sql.Tx, user *models.User) error {
 	log.Printf("ポイントレコード作成開始: user_id=%d", user.UserID)
-
-	// UserHandlerを作成
-	userHandler := &UserHandler{DB: h.DB}
-
-	// UserHandlerのメソッドを呼び出してポイントを作成
-	if err := userHandler.CreateInitialPoint(ctx, tx, user); err != nil {
+	
+	point := &models.Point{
+		UserID:       user.UserID,
+		CurrentPoint: 0,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+	
+	if err := point.Insert(ctx, tx, boil.Infer()); err != nil {
 		log.Printf("ポイントレコード作成エラー: %v", err)
 		return fmt.Errorf("failed to create point record: %v", err)
 	}
-
+	
 	log.Printf("ポイントレコード作成完了: user_id=%d", user.UserID)
 	return nil
 }
@@ -63,13 +68,11 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 	log.Printf("トークン検証成功: firebase_id=%s", verifiedToken.UID)
 
 	// ユーザーの取得または作成
-	log.Printf("ユーザーの取得または作成を開始: firebase_id=%s", verifiedToken.UID)
 	user, point, isNew, err := h.findOrCreateUser(ctx, verifiedToken)
 	if err != nil {
 		log.Printf("ユーザー取得/作成エラー: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の処理に失敗しました")
 	}
-	log.Printf("ユーザーの取得または作成が完了: user_id=%d, isNew=%v", user.UserID, isNew)
 
 	if isNew {
 		log.Printf("新規ユーザー登録完了: user_id=%d, firebase_id=%s", user.UserID, user.FirebaseID)
@@ -163,21 +166,77 @@ func (h *AuthHandler) findOrCreateUser(ctx context.Context, token *auth.Token) (
 		return nil, nil, false, fmt.Errorf("ユーザー検索エラー: %v", err)
 	}
 
-	log.Printf("新規ユーザー作成開始: firebase_id=%s", token.UID)
-
-	// ユーザー登録を呼び出す
-	userHandler := &UserHandler{DB: h.DB}
-	req := echo.NewContext(c.Request(), c.Response())
-	req.Set("uid", token.UID)
-	user, point, isNew, err := userHandler.RegisterUser(req)
+	// トランザクション開始
+	tx, err := h.DB.BeginTx(ctx, nil)
 	if err != nil {
-		log.Printf("ユーザー登録エラー: %v", err)
-		log.Printf("RegisterUser呼び出しエラー: %v", err)
-		return nil, nil, false, fmt.Errorf("ユーザー登録エラー: %v", err)
+		log.Printf("トランザクション開始エラー: %v", err)
+		return nil, nil, false, fmt.Errorf("トランザクション開始に失敗しました: %v", err)
 	}
 
-	log.Printf("ユーザーの取得または作成が完了: user_id=%d, isNew=%v", user.UserID, isNew)
-	return user, point, isNew, nil
+	// トランザクションのロールバック処理
+	var txErr error
+	defer func() {
+		if tx != nil && txErr != nil {
+			if rbErr := tx.Rollback(); rbErr != nil {
+				log.Printf("トランザクションのロールバックに失敗: %v", rbErr)
+			} else {
+				log.Printf("トランザクションをロールバックしました")
+			}
+		}
+	}()
+
+	log.Printf("新規ユーザー作成開始: firebase_id=%s", token.UID)
+
+	// 新規ユーザーの作成
+	now := time.Now()
+	newUser := &models.User{
+		FirebaseID: token.UID,
+		CreatedAt:  null.TimeFrom(now),
+		UpdatedAt:  null.TimeFrom(now),
+	}
+
+	log.Printf("新規ユーザー作成試行: firebase_id=%s", newUser.FirebaseID)
+	
+	if err := newUser.Insert(ctx, tx, boil.Infer()); err != nil {
+		txErr = err
+		log.Printf("ユーザー作成エラー: %v, firebase_id=%s", err, token.UID)
+		return nil, nil, false, fmt.Errorf("ユーザー作成エラー: %v", err)
+	}
+
+	log.Printf("新規ユーザー作成SQL完了: user_id=%d, firebase_id=%s", newUser.UserID, newUser.FirebaseID)
+
+	// トランザクションをコミット
+	if err := tx.Commit(); err != nil {
+		txErr = err
+		log.Printf("トランザクションのコミットに失敗: %v, firebase_id=%s", err, token.UID)
+		return nil, nil, false, fmt.Errorf("トランザクションのコミットに失敗: %v", err)
+	}
+	tx = nil
+
+	log.Printf("トランザクションをコミットしました")
+
+	// トリガーの実行を待機
+	time.Sleep(100 * time.Millisecond)
+
+	// ポイント情報の取得を複数回試行
+	var point *models.Point
+	var pointErr error
+	for i := 0; i < 5; i++ {
+		point, pointErr = models.Points(
+			qm.Where("user_id = ?", newUser.UserID),
+		).One(ctx, h.DB)
+		if pointErr == nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if pointErr != nil {
+		log.Printf("ポイント情報の取得に失敗: %v", pointErr)
+		return nil, nil, false, fmt.Errorf("ポイント情報の取得に失敗: %v", pointErr)
+	}
+
+	log.Printf("新規ユーザーのポイント情報取得完了: user_id=%d", newUser.UserID)
+	return newUser, point, true, nil
 }
 
 // ユーザーロールの検証
