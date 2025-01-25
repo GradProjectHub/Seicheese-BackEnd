@@ -41,7 +41,10 @@ func (h *MarkerHandler) GetMarkers(c echo.Context) error {
     }
 
     // 利用可能なマーカーを取得
-    markers, err := models.GetAvailableMarkers(ctx, h.DB, currentPoints)
+    markers, err := models.Markers(
+        models.MarkersWhere.RequiredPoints.LTE(currentPoints),
+        models.MarkersOrderBy.RequiredPoints.ASC(),
+    ).All(ctx, h.DB)
     if err != nil {
         return echo.NewHTTPError(http.StatusInternalServerError, "マーカー情報の取得に失敗")
     }
