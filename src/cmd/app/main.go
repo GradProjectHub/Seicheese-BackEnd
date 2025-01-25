@@ -52,12 +52,10 @@ func main() {
 	}
 	defer db.Close()
 
-	// ハンドラーの初期化
-	authHandler := &handler.AuthHandler{
-		DB:         db,
-		AuthClient: authClient,
-	}
+	// 認証ルーターの初期化
+	router.NewAuthRouter(e, db)
 
+	// その他のハンドラーの初期化
 	genreHandler := &handler.GenreHandler{
 		DB: db,
 	}
@@ -73,8 +71,7 @@ func main() {
 	// 認証ミドルウェアの初期化
 	authMiddleware := middleware.NewAuthMiddleware(authClient, db)
 
-	// ルーターの登録
-	router.RegisterAuthRoutes(e, authClient, authHandler, authMiddleware)
+	// その他のルーターの登録
 	router.RegisterGenreRoutes(e, genreHandler, authClient)
 	router.RegisterSeichiRoutes(e, seichiHandler, authClient)
 	router.RegisterContentRoutes(e, contentHandler, authClient)
