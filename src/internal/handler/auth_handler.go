@@ -65,36 +65,58 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 			log.Printf("Failed to begin transaction: %v", err)
 			return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションの開始に失敗しました")
 		}
-		defer tx.Rollback()
+
+		// トランザクションのロールバック処理
+		var txErr error
+		defer func() {
+			if txErr != nil {
+				if rbErr := tx.Rollback(); rbErr != nil {
+					log.Printf("トランザクションのロールバックに失敗: %v", rbErr)
+				} else {
+					log.Printf("トランザクションをロールバックしました")
+				}
+			}
+		}()
+
+		log.Printf("トランザクション開始: ユーザー登録")
 
 		// ユーザーを保存
 		err = newUser.Insert(c.Request().Context(), tx, boil.Infer())
 		if err != nil {
+			txErr = err
 			log.Printf("Failed to insert new user: %v", err)
 			return echo.NewHTTPError(http.StatusInternalServerError, "ユーザーの登録に失敗しました")
 		}
 
+		log.Printf("ユーザーを作成しました: user_id=%d", newUser.UserID)
+
 		// ポイントレコードを作成
+		log.Printf("ポイントレコード作成開始: user_id=%d", newUser.UserID)
 		newPoint := models.Point{
 			UserID:       newUser.UserID,
 			CurrentPoint: 0,
 			CreatedAt:    now,
 			UpdatedAt:    now,
 		}
+		log.Printf("ポイントレコード作成データ: %+v", newPoint)
 
 		err = newPoint.Insert(c.Request().Context(), tx, boil.Infer())
 		if err != nil {
+			txErr = err
 			log.Printf("Failed to insert new point record: %v", err)
 			return echo.NewHTTPError(http.StatusInternalServerError, "ポイントの初期化に失敗しました")
 		}
 
+		log.Printf("ポイントレコードを作成しました: user_id=%d", newUser.UserID)
+
 		// トランザクションをコミット
 		if err := tx.Commit(); err != nil {
+			txErr = err
 			log.Printf("Failed to commit transaction: %v", err)
 			return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションのコミットに失敗しました")
 		}
 
-		log.Printf("New user created successfully: %+v", newUser)
+		log.Printf("トランザクションをコミットしました")
 
 		return c.JSON(http.StatusCreated, map[string]interface{}{
 			"message": "ユーザーを新規登録しました",
