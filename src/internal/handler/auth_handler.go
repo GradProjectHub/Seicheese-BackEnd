@@ -94,6 +94,7 @@ func (h *AuthHandler) RegisterUser(c echo.Context) error {
 		models.UserWhere.FirebaseID.EQ(verifiedToken.UID),
 	).One(ctx, h.DB)
 
+	var point models.Point
 	isNewUser := false
 	if err == sql.ErrNoRows {
 		log.Printf("新規ユーザーとして処理開始: firebase_id=%s", verifiedToken.UID)
@@ -116,7 +117,7 @@ func (h *AuthHandler) RegisterUser(c echo.Context) error {
 		log.Printf("ユーザーを作成しました: user_id=%d, firebase_id=%s", user.UserID, user.FirebaseID)
 
 		// ポイント情報の作成
-		point := &models.Point{
+		point = models.Point{
 			UserID:       user.UserID,
 			CurrentPoint: 0,
 			CreatedAt:    now,

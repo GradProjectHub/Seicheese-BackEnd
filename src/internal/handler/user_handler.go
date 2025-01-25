@@ -233,7 +233,8 @@ func (h *UserHandler) UpdateUserPoints(c echo.Context) error {
 	}
 
 	point.CurrentPoint += req.Points
-	if err := point.Update(c.Request().Context(), tx, boil.Infer()); err != nil {
+	updatedPoint, err := point.Update(c.Request().Context(), tx, boil.Infer())
+	if err != nil {
 		txErr = err
 		log.Printf("Error updating point record: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
@@ -250,11 +251,11 @@ func (h *UserHandler) UpdateUserPoints(c echo.Context) error {
 		})
 	}
 
-	log.Printf("ポイント情報を更新しました: user_id=%d, new_points=%d", user.UserID, point.CurrentPoint)
+	log.Printf("ポイント情報を更新しました: user_id=%d, new_points=%d", user.UserID, updatedPoint)
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"user_id": user.UserID,
-		"points":  point.CurrentPoint,
+		"points":  updatedPoint,
 	})
 }
 
