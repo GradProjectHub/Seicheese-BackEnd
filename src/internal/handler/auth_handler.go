@@ -29,10 +29,20 @@ type AuthHandler struct {
 }
 
 func NewAuthHandler(db *sql.DB, authClient *auth.Client) *AuthHandler {
+	if db == nil {
+		log.Fatal("Database connection is nil")
+	}
+	if authClient == nil {
+		log.Fatal("Auth client is nil")
+	}
+	userHandler := NewUserHandler(db)
+	if userHandler == nil {
+		log.Fatal("Failed to create UserHandler")
+	}
 	return &AuthHandler{
 		DB:          db,
 		AuthClient:  authClient,
-		UserHandler: NewUserHandler(db),
+		UserHandler: userHandler,
 	}
 }
 
@@ -171,6 +181,12 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 	if err != nil {
 		log.Printf("ユーザー取得または作成エラー: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の取得に失敗しました")
+	}
+
+	if created {
+		log.Printf("新規ユーザーを作成しました: user_id=%d", user.UserID)
+	} else {
+		log.Printf("既存ユーザーを取得しました: user_id=%d", user.UserID)
 	}
 
 	// ポイント情報の取得
