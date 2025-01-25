@@ -286,23 +286,6 @@ func (h *UserHandler) CreateUser(ctx context.Context, firebaseID string) (*model
 	}
 
 	log.Printf("ユーザーを作成しました: user_id=%d, firebase_id=%s", user.UserID, user.FirebaseID)
-
-	// ポイント情報の作成
-	point := &models.Point{
-		UserID:       user.UserID,
-		CurrentPoint: 0,
-		CreatedAt:    now,
-		UpdatedAt:    now,
-	}
-
-	log.Printf("ポイント情報作成試行: user_id=%d", user.UserID)
-
-	if err := point.Insert(ctx, h.DB, boil.Infer()); err != nil {
-		log.Printf("ポイント情報作成エラー: %v", err)
-		return nil, fmt.Errorf("ポイント情報の作成に失敗しました: %v", err)
-	}
-
-	log.Printf("ポイント情報を作成しました: user_id=%d", user.UserID)
 	return user, nil
 }
 
