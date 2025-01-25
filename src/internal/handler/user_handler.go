@@ -334,8 +334,8 @@ func (h *UserHandler) GetUserPoints(c echo.Context) error {
 	).One(c.Request().Context(), h.DB)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return c.JSON(http.StatusOK, map[string]interface{}{
-				"points": 0,
+			return c.JSON(http.StatusUnauthorized, map[string]string{
+				"error": "ユーザーが登録されていません。サインインが必要です。",
 			})
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{
