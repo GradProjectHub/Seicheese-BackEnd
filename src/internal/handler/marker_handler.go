@@ -1,80 +1,98 @@
 package handler
 
 import (
-    "database/sql"
-    "net/http"
-    "path/filepath"
-    "seicheese/models"
-    "strconv"
+	"database/sql"
+	"log"
+	"net/http"
+	"path/filepath"
+	"seicheese/models"
+	"strconv"
 
-    "github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4"
+	"github.com/volatiletech/sqlboiler/v4/queries/qm"
 )
 
 type MarkerHandler struct {
-    DB *sql.DB
+	DB *sql.DB
 }
 
-// GetMarkers returns all available markers for the user
+// GetMarkers ユーザーが利用可能なマーカー一覧を取得
 func (h *MarkerHandler) GetMarkers(c echo.Context) error {
-    ctx := c.Request().Context()
-    uid := c.Get("uid").(string)
+	uid := c.Get("uid").(string)
+	if uid == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "ユーザーIDが必要です",
+		})
+	}
 
-    // ユーザーのポイントを取得
-    user, err := models.Users(
-        models.UserWhere.FirebaseID.EQ(uid),
-    ).One(ctx, h.DB)
-    if err != nil {
-        return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の取得に失敗しました")
-    }
+	// ユーザー情報の取得
+	user, err := models.Users(
+		models.UserWhere.FirebaseID.EQ(uid),
+	).One(c.Request().Context(), h.DB)
+	if err != nil {
+		log.Printf("Error fetching user: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "ユーザー情報の取得に失敗しました",
+		})
+	}
 
-    // ユーザーのポイントを取得
-    userPoint, err := models.Points(
-        models.PointWhere.UserID.EQ(user.UserID),
-    ).One(ctx, h.DB)
-    if err != nil && err != sql.ErrNoRows {
-        return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の取得に失敗")
-    }
+	// ポイント情報の取得
+	point, err := models.Points(
+		models.PointWhere.UserID.EQ(user.UserID),
+	).One(c.Request().Context(), h.DB)
+	if err != nil && err != sql.ErrNoRows {
+		log.Printf("Error fetching points: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "ポイント情報の取得に失敗しました",
+		})
+	}
 
-    currentPoints := 0
-    if userPoint != nil {
-        currentPoints = userPoint.CurrentPoint
-    }
+	currentPoints := 0
+	if point != nil {
+		currentPoints = point.CurrentPoint
+	}
 
-    // 利用可能なマーカーを取得
-    markers, err := models.Markers(
-        models.MarkersWhere.RequiredPoints.LTE(currentPoints),
-        models.MarkersOrderBy.RequiredPoints.ASC(),
-    ).All(ctx, h.DB)
-    if err != nil {
-        return echo.NewHTTPError(http.StatusInternalServerError, "マーカー情報の取得に失敗")
-    }
+	// 利用可能なマーカーの取得
+	markers, err := models.Markers(
+		qm.Where("required_points <= ?", currentPoints),
+		qm.OrderBy("required_points ASC"),
+	).All(c.Request().Context(), h.DB)
+	if err != nil {
+		log.Printf("Error fetching markers: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "マーカー情報の取得に失敗しました",
+		})
+	}
 
-    return c.JSON(http.StatusOK, markers)
+	return c.JSON(http.StatusOK, markers)
 }
 
-// GetMarkerImage returns the marker image
+// GetMarkerImage マーカー画像の取得
 func (h *MarkerHandler) GetMarkerImage(c echo.Context) error {
-    ctx := c.Request().Context()
-    markerID := c.Param("id")
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "不正なマーカーIDです",
+		})
+	}
 
-    // マーカー情報を取得
-    id, err := strconv.Atoi(markerID)
-    if err != nil {
-        return echo.NewHTTPError(http.StatusBadRequest, "不正なマーカーIDです")
-    }
+	// マーカー画像の取得
+	marker, err := models.Markers(
+		qm.Where("id = ?", id),
+	).One(c.Request().Context(), h.DB)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return c.JSON(http.StatusNotFound, map[string]string{
+				"error": "マーカーが見つかりません",
+			})
+		}
+		log.Printf("Error fetching marker: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "マーカー情報の取得に失敗しました",
+		})
+	}
 
-    // マーカー画像の取得
-    marker, err := models.Markers(
-        models.MarkersWhere.ID.EQ(strconv.Itoa(id)),
-    ).One(ctx, h.DB)
-    if err != nil {
-        if err == sql.ErrNoRows {
-            return echo.NewHTTPError(http.StatusNotFound, "マーカーが見つかりません")
-        }
-        return echo.NewHTTPError(http.StatusInternalServerError, "マーカー情報の取得に失敗")
-    }
-
-    // 画像ファイルのパスを構築
-    imagePath := filepath.Join("static/markers", marker.ImagePath)
-    return c.File(imagePath)
+	return c.JSON(http.StatusOK, map[string]string{
+		"image_path": marker.ImagePath,
+	})
 } 
