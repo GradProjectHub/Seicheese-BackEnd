@@ -26,8 +26,10 @@ func main() {
 		AllowOrigins: []string{
 			"https://seicheese.jp",
 			"https://www.seicheese.jp",
+			"http://localhost:3000",
+			"http://localhost:8080",
 		},
-		AllowMethods: []string{http.MethodGet, http.MethodPost},
+		AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete},
 		AllowHeaders: []string{
 			echo.HeaderOrigin,
 			echo.HeaderContentType,
@@ -69,11 +71,11 @@ func main() {
 	}
 
 	// ルーターの登録
-	router.RegisterAuthRoutes(e, authClient, authHandler, middleware.NewAuthMiddleware(authClient, db))
-	router.RegisterUserRoutes(e, userHandler, middleware.NewAuthMiddleware(authClient, db))
 	router.RegisterGenreRoutes(e, genreHandler, authClient)
 	router.RegisterSeichiRoutes(e, seichiHandler, authClient)
 	router.RegisterContentRoutes(e, contentHandler, authClient)
+	router.RegisterUserRoutes(e, userHandler, middleware.NewAuthMiddleware(authClient, db))
+	router.RegisterAuthRoutes(e, authClient, authHandler, middleware.NewAuthMiddleware(authClient, db))
 
 	// サーバー起動
 	port := os.Getenv("PORT")
