@@ -62,7 +62,7 @@ func (h *MarkerHandler) GetMarkerImage(c echo.Context) error {
 
     // マーカー画像の取得
     marker, err := models.Markers(
-        models.MarkerWhere.ID.EQ(strconv.Itoa(id)),
+        models.MarkersWhere.ID.EQ(strconv.Itoa(id)),
     ).One(ctx, h.DB)
     if err != nil {
         if err == sql.ErrNoRows {
