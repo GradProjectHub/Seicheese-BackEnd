@@ -57,6 +57,7 @@ func main() {
 
 	// ハンドラーの初期化
 	authHandler := handler.NewAuthHandler(db, authClient)
+	userHandler := handler.NewUserHandler(db)
 	genreHandler := &handler.GenreHandler{
 		DB: db,
 	}
@@ -69,6 +70,7 @@ func main() {
 
 	// ルーターの登録
 	router.RegisterAuthRoutes(e, authClient, authHandler, middleware.NewAuthMiddleware(authClient, db))
+	router.RegisterUserRoutes(e, userHandler, middleware.NewAuthMiddleware(authClient, db))
 	router.RegisterGenreRoutes(e, genreHandler, authClient)
 	router.RegisterSeichiRoutes(e, seichiHandler, authClient)
 	router.RegisterContentRoutes(e, contentHandler, authClient)
