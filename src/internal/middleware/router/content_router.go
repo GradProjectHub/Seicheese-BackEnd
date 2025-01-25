@@ -9,19 +9,16 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-func RegisterContentRoutes(e *echo.Echo, contentHandler *handler.ContentHandler, authClient *auth.Client) {
-	// 認証ミドルウェアの初期化
-	authMiddleware := middleware.NewAuthMiddleware(authClient, contentHandler.DB)
-
+func RegisterContentRoutes(e *echo.Echo, contentHandler *handler.ContentHandler, authMiddleware *middleware.AuthMiddleware) {
 	// コンテンツ関連のルーティンググループ
 	contentGroup := e.Group("/contents")
 
-	// すべてのエンドポイントで認証が必要
-	contentGroup.Use(authMiddleware.FirebaseAuthMiddleware())
-
-	// コンテンツの検索
+	// 認証不要のエンドポイント
 	contentGroup.GET("/search", contentHandler.SearchContents)
+	contentGroup.GET("", contentHandler.GetContents)
 
-	// コンテンツの登録
-	contentGroup.POST("/register", contentHandler.RegisterContent)
+	// 認証が必要なエンドポイント
+	authGroup := contentGroup.Group("")
+	authGroup.Use(authMiddleware.FirebaseAuthMiddleware())
+	authGroup.POST("/register", contentHandler.RegisterContent)
 }

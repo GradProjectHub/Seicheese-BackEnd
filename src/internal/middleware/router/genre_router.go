@@ -7,16 +7,12 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-func RegisterGenreRoutes(e *echo.Echo, genreHandler *handler.GenreHandler, authClient *auth.Client) {
-	// 認証ミドルウェアの初期化
-	authMiddleware := middleware.NewAuthMiddleware(authClient, genreHandler.DB)
-
+func RegisterGenreRoutes(e *echo.Echo, genreHandler *handler.GenreHandler, authMiddleware *middleware.AuthMiddleware) {
 	// ジャンル関連のルーティンググループ
 	genreGroup := e.Group("/genres")
 
-	// すべてのエンドポイントで認証が必要
-	genreGroup.Use(authMiddleware.FirebaseAuthMiddleware())
-
-	// ジャンルの取得
+	// 認証不要のエンドポイント
 	genreGroup.GET("", genreHandler.GetGenres)
+
+	// 認証が必要なエンドポイント（現時点では無し）
 }

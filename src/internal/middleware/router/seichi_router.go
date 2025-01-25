@@ -12,14 +12,12 @@ func RegisterSeichiRoutes(e *echo.Echo, seichiHandler *handler.SeichiHandler, au
 	// 聖地関連のルーティンググループ
 	seichiGroup := e.Group("/seichies")
 
-	// すべてのエンドポイントで認証が必要
-	seichiGroup.Use(authMiddleware.FirebaseAuthMiddleware())
-
-	// 聖地の取得
+	// 認証不要のエンドポイント
 	seichiGroup.GET("", seichiHandler.GetSeichies)
-
-	// 聖地の登録
-	seichiGroup.POST("", seichiHandler.RegisterSeichi)
-
 	seichiGroup.GET("/search", seichiHandler.SearchSeichies)
+
+	// 認証が必要なエンドポイント
+	authGroup := seichiGroup.Group("")
+	authGroup.Use(authMiddleware.FirebaseAuthMiddleware())
+	authGroup.POST("", seichiHandler.RegisterSeichi)
 }
