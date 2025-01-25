@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"net/http"
 	"time"
-	"math"
 
 	"seicheese/models"
 
@@ -141,8 +140,7 @@ func (h *CheckinHandler) Checkin(c echo.Context) error {
 		UserID:    user.UserID,
 		SeichiID:  req.SeichiID,
 		CreatedAt: time.Now(),
-		Points:    points,
-		StampID:   stampID,
+		EarnedPoint: points,
 	}
 
 	// トランザクション開始

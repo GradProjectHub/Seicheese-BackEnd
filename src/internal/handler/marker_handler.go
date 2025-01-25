@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
-	"path/filepath"
 	"seicheese/models"
 	"strconv"
 
