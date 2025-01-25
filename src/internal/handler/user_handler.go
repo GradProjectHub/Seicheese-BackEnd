@@ -44,12 +44,12 @@ func (h *UserHandler) RegisterUser(c echo.Context) error {
 
 	log.Printf("ユーザー登録開始: firebase_id=%s", uid)
 
+	// ユーザーの存在確認
 	exists, err := models.Users(
 		models.UserWhere.FirebaseID.EQ(uid),
 	).Exists(c.Request().Context(), h.DB)
 	if err != nil {
 		log.Printf("Error checking user existence: %v", err)
-		log.Printf("ユーザー存在確認クエリエラー: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "ユーザー情報の確認に失敗しました",
 		})
@@ -65,7 +65,6 @@ func (h *UserHandler) RegisterUser(c echo.Context) error {
 	tx, err := h.DB.BeginTx(c.Request().Context(), nil)
 	if err != nil {
 		log.Printf("Error starting transaction: %v", err)
-		log.Printf("トランザクション開始エラー: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "トランザクションの開始に失敗しました",
 		})
@@ -106,12 +105,11 @@ func (h *UserHandler) RegisterUser(c echo.Context) error {
 	// ポイントレコードを作成
 	log.Printf("ポイントレコード作成開始: user_id=%d", user.UserID)
 	newPoint := &models.Point{
-		UserID:       user.UserID,
+		UserID:      user.UserID,
 		CurrentPoint: 0,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
-	log.Printf("ポイントレコード作成データ: %+v", newPoint)
 
 	if err := newPoint.Insert(c.Request().Context(), tx, boil.Infer()); err != nil {
 		txErr = err
