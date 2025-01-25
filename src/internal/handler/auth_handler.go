@@ -167,10 +167,10 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 	log.Printf("トークン検証成功: firebase_id=%s", verifiedToken.UID)
 
 	// ユーザー情報の取得または作成
-	user, _, err := h.UserHandler.GetOrCreateUser(ctx, verifiedToken.UID)
+	user, created, err := h.UserHandler.GetOrCreateUser(ctx, verifiedToken.UID)
 	if err != nil {
-		log.Printf("ユーザー取得/作成エラー: %v", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の処理に失敗しました")
+		log.Printf("ユーザー取得または作成エラー: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の取得に失敗しました")
 	}
 
 	// ポイント情報の取得

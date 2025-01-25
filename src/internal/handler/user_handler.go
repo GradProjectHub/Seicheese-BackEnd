@@ -301,6 +301,10 @@ func (h *UserHandler) CreateUser(ctx context.Context, firebaseID string) (*model
 
 // GetOrCreateUser handles getting or creating a user
 func (h *UserHandler) GetOrCreateUser(ctx context.Context, firebaseID string) (*models.User, bool, error) {
+	if h == nil {
+		return nil, false, fmt.Errorf("UserHandler is nil")
+	}
+
 	log.Printf("ユーザー取得または作成開始: firebase_id=%s", firebaseID)
 
 	// ユーザーの存在確認
