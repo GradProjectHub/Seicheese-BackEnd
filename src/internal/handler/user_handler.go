@@ -44,8 +44,7 @@ func (h *UserHandler) RegisterUser(c echo.Context) error {
 
 	log.Printf("ユーザー登録開始: firebase_id=%s", uid)
 
-	// ユーザーの存在確認を一時的にコメントアウト
-	/*
+	// ユーザーの存在確認
 	exists, err := models.Users(
 		models.UserWhere.FirebaseID.EQ(uid),
 	).Exists(c.Request().Context(), h.DB)
@@ -60,16 +59,6 @@ func (h *UserHandler) RegisterUser(c echo.Context) error {
 		return c.JSON(http.StatusConflict, map[string]string{
 			"error": "既に登録されているユーザーです",
 		})
-	}
-	*/
-
-	// 強制的に新規ユーザーを作成する処理
-	log.Printf("ユーザーが存在しないため、新規ユーザー作成処理に進みます")
-	now := time.Now()
-	user := &models.User{
-		FirebaseID: uid,
-		CreatedAt:  null.TimeFrom(now),
-		UpdatedAt:  null.TimeFrom(now),
 	}
 
 	// トランザクションを開始
@@ -93,6 +82,16 @@ func (h *UserHandler) RegisterUser(c echo.Context) error {
 		}
 	}()
 
+	log.Printf("トランザクション開始")
+
+	// ユーザーを作成
+	now := time.Now()
+	user := &models.User{
+		FirebaseID: uid,
+		CreatedAt:  null.TimeFrom(now),
+		UpdatedAt:  null.TimeFrom(now),
+	}
+
 	if err := user.Insert(c.Request().Context(), tx, boil.Infer()); err != nil {
 		txErr = err
 		log.Printf("Error inserting user: %v", err)
@@ -102,25 +101,6 @@ func (h *UserHandler) RegisterUser(c echo.Context) error {
 	}
 
 	log.Printf("ユーザーを作成しました: user_id=%d", user.UserID)
-
-	// ポイントレコードを作成
-	log.Printf("ポイントレコード作成開始: user_id=%d", user.UserID)
-	newPoint := &models.Point{
-		UserID:      user.UserID,
-		CurrentPoint: 0,
-		CreatedAt:   now,
-		UpdatedAt:   now,
-	}
-
-	if err := newPoint.Insert(c.Request().Context(), tx, boil.Infer()); err != nil {
-		txErr = err
-		log.Printf("Error inserting point record: %v", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "ポイントの初期化に失敗しました",
-		})
-	}
-
-	log.Printf("ポイントレコードを作成しました: user_id=%d", user.UserID)
 
 	// トランザクションをコミット
 	if err := tx.Commit(); err != nil {
