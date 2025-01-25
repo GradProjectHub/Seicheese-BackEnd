@@ -79,7 +79,7 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 	}()
 
 	// ユーザーの取得または作成
-	user, err := h.findOrCreateUser(ctx, verifiedToken)
+	user, err := h.findOrCreateUser(ctx, tx, verifiedToken)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザーの取得または作成に失敗しました")
 	}
@@ -154,11 +154,11 @@ func extractIDToken(c echo.Context) string {
 }
 
 // ユーザー情報の取得または作成
-func (h *AuthHandler) findOrCreateUser(ctx context.Context, token *auth.Token) (*models.User, error) {
+func (h *AuthHandler) findOrCreateUser(ctx context.Context, tx *sql.Tx, token *auth.Token) (*models.User, error) {
 	// 既存ユーザーの検索
 	user, err := models.Users(
 		qm.Where("firebase_id = ?", token.UID),
-	).One(ctx, h.DB)
+	).One(ctx, tx)
 	
 	if err == nil {
 		return user, nil
@@ -168,6 +168,8 @@ func (h *AuthHandler) findOrCreateUser(ctx context.Context, token *auth.Token) (
 		return nil, fmt.Errorf("ユーザー検索エラー: %v", err)
 	}
 
+	log.Printf("新規ユーザー作成開始: firebase_id=%s", token.UID)
+
 	// 新規ユーザーの作成
 	now := null.TimeFrom(time.Now())
 	newUser := &models.User{
@@ -176,9 +178,11 @@ func (h *AuthHandler) findOrCreateUser(ctx context.Context, token *auth.Token) (
 		UpdatedAt:  now,
 	}
 
-	if err := newUser.Insert(ctx, h.DB, boil.Infer()); err != nil {
+	if err := newUser.Insert(ctx, tx, boil.Infer()); err != nil {
 		return nil, fmt.Errorf("ユーザー作成エラー: %v", err)
 	}
+
+	log.Printf("新規ユーザー作成完了: user_id=%d", newUser.UserID)
 
 	// トリガーによるポイント作成を待つ
 	time.Sleep(100 * time.Millisecond)
