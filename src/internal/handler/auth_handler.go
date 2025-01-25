@@ -50,77 +50,67 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 	).One(c.Request().Context(), h.DB)
 
 	if err == sql.ErrNoRows {
-		log.Printf("User not found for UID: %s, creating new user", verifiedToken.UID)
-		// ユーザーが存在しない場合は新規登録を行う
-		now := time.Now()
-		newUser := models.User{
-			FirebaseID: verifiedToken.UID,
-			CreatedAt:  null.TimeFrom(now),
-			UpdatedAt:  null.TimeFrom(now),
-		}
-
-		// トランザクション開始
+		log.Printf("新規ユーザー登録開始: firebase_id=%s", verifiedToken.UID)
+		
 		tx, err := h.DB.BeginTx(c.Request().Context(), nil)
 		if err != nil {
-			log.Printf("Failed to begin transaction: %v", err)
-			return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションの開始に失敗しました")
+			log.Printf("トランザクション開始エラー: %v", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "データベースエラー")
 		}
-
+		
 		// トランザクションのロールバック処理
 		var txErr error
 		defer func() {
 			if txErr != nil {
 				if rbErr := tx.Rollback(); rbErr != nil {
-					log.Printf("トランザクションのロールバックに失敗: %v", rbErr)
-				} else {
-					log.Printf("トランザクションをロールバックしました")
+					log.Printf("ロールバックエラー: %v", rbErr)
 				}
+				log.Printf("トランザクションロールバック完了")
 			}
 		}()
 
-		log.Printf("トランザクション開始: ユーザー登録")
-
-		// ユーザーを保存
-		err = newUser.Insert(c.Request().Context(), tx, boil.Infer())
+		// ユーザーの作成
+		user := &models.User{
+			FirebaseID: verifiedToken.UID,
+			IsAdmin:    false,
+		}
+		
+		log.Printf("ユーザーレコード作成開始")
+		err = user.Insert(c.Request().Context(), tx, boil.Infer())
 		if err != nil {
 			txErr = err
-			log.Printf("Failed to insert new user: %v", err)
-			return echo.NewHTTPError(http.StatusInternalServerError, "ユーザーの登録に失敗しました")
+			log.Printf("ユーザーレコード作成エラー: %v", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー作成に失敗しました")
 		}
+		log.Printf("ユーザーレコード作成完了: user_id=%d", user.UserID)
 
-		log.Printf("ユーザーを作成しました: user_id=%d", newUser.UserID)
-
-		// ポイントレコードを作成
-		log.Printf("ポイントレコード作成開始: user_id=%d", newUser.UserID)
-		newPoint := models.Point{
-			UserID:       newUser.UserID,
+		// ポイントレコードの作成
+		point := &models.Point{
+			UserID:       user.UserID,
 			CurrentPoint: 0,
-			CreatedAt:    now,
-			UpdatedAt:    now,
 		}
-		log.Printf("ポイントレコード作成データ: %+v", newPoint)
-
-		err = newPoint.Insert(c.Request().Context(), tx, boil.Infer())
+		
+		log.Printf("ポイントレコード作成開始: user_id=%d", user.UserID)
+		err = point.Insert(c.Request().Context(), tx, boil.Infer())
 		if err != nil {
 			txErr = err
-			log.Printf("Failed to insert new point record: %v", err)
-			return echo.NewHTTPError(http.StatusInternalServerError, "ポイントの初期化に失敗しました")
+			log.Printf("ポイントレコード作成エラー: %v", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の作成に失敗しました")
 		}
+		log.Printf("ポイントレコード作成完了")
 
-		log.Printf("ポイントレコードを作成しました: user_id=%d", newUser.UserID)
-
-		// トランザクションをコミット
-		if err := tx.Commit(); err != nil {
+		// トランザクションのコミット
+		err = tx.Commit()
+		if err != nil {
 			txErr = err
-			log.Printf("Failed to commit transaction: %v", err)
-			return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションのコミットに失敗しました")
+			log.Printf("トランザクションコミットエラー: %v", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "データベースエラー")
 		}
-
-		log.Printf("トランザクションをコミットしました")
+		log.Printf("トランザクションコミット完了")
 
 		return c.JSON(http.StatusCreated, map[string]interface{}{
 			"message": "ユーザーを新規登録しました",
-			"user":    newUser,
+			"user":    user,
 		})
 	} else if err != nil {
 		log.Printf("Database error while looking up user: %v", err)
