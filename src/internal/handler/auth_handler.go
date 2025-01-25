@@ -28,7 +28,8 @@ type AuthHandler struct {
 }
 
 // ポイント情報作成用の関数
-func (h *AuthHandler) createInitialPoint(ctx context.Context, tx *sql.Tx, userID int, now null.Time) error {
+func (h *AuthHandler) createInitialPoint(ctx context.Context, tx *sql.Tx, userID int) error {
+	now := time.Now()
 	point := &models.Point{
 		UserID:       userID,
 		CurrentPoint: 0,
@@ -107,7 +108,7 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 		log.Printf("ユーザー作成完了: user_id=%d", user.UserID)
 
 		// ポイント情報作成
-		if err := h.createInitialPoint(ctx, tx, user.UserID, now); err != nil {
+		if err := h.createInitialPoint(ctx, tx, user.UserID); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
 
