@@ -10,7 +10,7 @@ chmod -R 755 /home/user/go/src/app/models"
 # データベースの接続情報 (docker-compose.ymlと一致させる)
 DB_USER="root"
 DB_PASS="Wario-51"
-DB_HOST="db"
+DB_HOST="seicheese-db"
 DB_PORT=3306
 DB_NAME="SeiCheese"
 
