@@ -106,9 +106,11 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 		committed := false
 		defer func() {
 			if !committed {
+				log.Printf("トランザクションのロールバック開始")
 				if rbErr := tx.Rollback(); rbErr != nil {
 					log.Printf("トランザクションのロールバックに失敗: %v", rbErr)
 				}
+				log.Printf("トランザクションのロールバック完了")
 			}
 		}()
 
@@ -129,10 +131,11 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 
 		// ポイント情報作成
 		if err := h.createInitialPoint(ctx, tx, newUser.UserID); err != nil {
+			log.Printf("ポイント情報作成エラー: %v", err)
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
 
-		// トランザクションのコミット
+		log.Printf("トランザクションのコミット開始")
 		if err := tx.Commit(); err != nil {
 			log.Printf("トランザクションのコミットに失敗: %v", err)
 			return echo.NewHTTPError(http.StatusInternalServerError, "Failed to commit transaction")
