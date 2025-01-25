@@ -18,6 +18,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/volatiletech/sqlboiler/v4/queries/qm"
 	"github.com/volatiletech/null/v8"
+	"github.com/volatiletech/sqlboiler/v4/boil"
 )
 
 type AuthMiddleware struct {
@@ -63,18 +64,47 @@ func (m *AuthMiddleware) FirebaseAuthMiddleware() echo.MiddlewareFunc {
 			}
 			if !exists {
 				log.Printf("ユーザーが存在しないため、新規ユーザー作成処理に進みます")
-				userHandler := &UserHandler{DB: m.DB}
+				
+				// トランザクション開始
+				tx, err := m.DB.BeginTx(c.Request().Context(), nil)
+				if err != nil {
+					log.Printf("トランザクション開始エラー: %v", err)
+					return echo.NewHTTPError(http.StatusInternalServerError, "トランザクション開始に失敗しました")
+				}
+
+				// トランザクションのロールバック処理
+				var txErr error
+				defer func() {
+					if tx != nil && txErr != nil {
+						if rbErr := tx.Rollback(); rbErr != nil {
+							log.Printf("トランザクションのロールバックに失敗: %v", rbErr)
+						}
+					}
+				}()
+
+				// 新規ユーザーの作成
+				now := time.Now()
 				newUser := &models.User{
 					FirebaseID: tokenVerified.UID,
-					CreatedAt:  null.TimeFrom(time.Now()),
-					UpdatedAt:  null.TimeFrom(time.Now()),
+					CreatedAt:  null.TimeFrom(now),
+					UpdatedAt:  null.TimeFrom(now),
 				}
-				user, err := userHandler.RegisterUser(newUser)
-				if err != nil {
-					log.Printf("ユーザー登録エラー: %v", err)
-					return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー登録に失敗しました")
+
+				if err := newUser.Insert(c.Request().Context(), tx, boil.Infer()); err != nil {
+					txErr = err
+					log.Printf("ユーザー作成エラー: %v", err)
+					return echo.NewHTTPError(http.StatusInternalServerError, "ユーザーの登録に失敗しました")
 				}
-				log.Printf("新規ユーザー登録完了: user_id=%d, firebase_id=%s", user.UserID, user.FirebaseID)
+
+				// トランザクションをコミット
+				if err := tx.Commit(); err != nil {
+					txErr = err
+					log.Printf("トランザクションのコミットに失敗: %v", err)
+					return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションのコミットに失敗しました")
+				}
+				tx = nil
+
+				log.Printf("新規ユーザー登録完了: user_id=%d, firebase_id=%s", newUser.UserID, newUser.FirebaseID)
 			} else {
 				log.Printf("ユーザーが存在します: firebase_id=%s", tokenVerified.UID)
 			}
