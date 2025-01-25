@@ -8,18 +8,18 @@ import (
 	"seicheese/internal/handler"
 	firebase "seicheese/internal/infrastructure"
 	"seicheese/internal/infrastructure/database"
+	"seicheese/internal/middleware"
 	router "seicheese/internal/middleware/router"
 
 	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
+	echomiddleware "github.com/labstack/echo/v4/middleware"
 )
 
 func main() {
-
 	e := echo.New()
 
 	// CORS設定
-	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+	e.Use(echomiddleware.CORSWithConfig(echomiddleware.CORSConfig{
 		AllowOrigins: []string{
 			"https://seicheese.jp",
 			"https://www.seicheese.jp",
@@ -70,8 +70,11 @@ func main() {
 		DB: db,
 	}
 
+	// 認証ミドルウェアの初期化
+	authMiddleware := middleware.NewAuthMiddleware(authClient, db)
+
 	// ルーターの登録
-	router.RegisterAuthRoutes(e, authClient, authHandler)
+	router.RegisterAuthRoutes(e, authClient, authHandler, authMiddleware)
 	router.RegisterGenreRoutes(e, genreHandler, authClient)
 	router.RegisterSeichiRoutes(e, seichiHandler, authClient)
 	router.RegisterContentRoutes(e, contentHandler, authClient)
