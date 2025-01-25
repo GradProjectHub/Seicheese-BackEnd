@@ -95,7 +95,6 @@ func (h *AuthHandler) RegisterUser(c echo.Context) error {
 	).One(ctx, h.DB)
 
 	var point models.Point
-	isNewUser := false
 	if err == sql.ErrNoRows {
 		log.Printf("新規ユーザーとして処理開始: firebase_id=%s", verifiedToken.UID)
 
@@ -132,7 +131,6 @@ func (h *AuthHandler) RegisterUser(c echo.Context) error {
 		}
 
 		log.Printf("ポイント情報を作成しました: user_id=%d", user.UserID)
-		isNewUser = true
 
 	} else if err != nil {
 		log.Printf("ユーザー情報の取得に失敗: %v", err)
@@ -169,7 +167,7 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 	log.Printf("トークン検証成功: firebase_id=%s", verifiedToken.UID)
 
 	// ユーザー情報の取得または作成
-	user, isNewUser, err := h.UserHandler.GetOrCreateUser(ctx, verifiedToken.UID)
+	user, _, err := h.UserHandler.GetOrCreateUser(ctx, verifiedToken.UID)
 	if err != nil {
 		log.Printf("ユーザー取得/作成エラー: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の処理に失敗しました")
@@ -184,15 +182,8 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の取得に失敗しました")
 	}
 
-	status := http.StatusOK
-	message := "サインインに成功しました"
-	if isNewUser {
-		status = http.StatusCreated
-		message = "新規ユーザーとして登録しました"
-	}
-
-	return c.JSON(status, map[string]interface{}{
-		"message": message,
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"message": "サインインに成功しました",
 		"user": map[string]interface{}{
 			"user_id":    user.UserID,
 			"created_at": user.CreatedAt.Time,
