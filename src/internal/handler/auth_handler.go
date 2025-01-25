@@ -65,11 +65,13 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 	log.Printf("トークン検証成功: firebase_id=%s", verifiedToken.UID)
 
 	// ユーザーの取得または作成
+	log.Printf("ユーザーの取得または作成を開始: firebase_id=%s", verifiedToken.UID)
 	user, point, isNew, err := h.findOrCreateUser(ctx, verifiedToken)
 	if err != nil {
 		log.Printf("ユーザー取得/作成エラー: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の処理に失敗しました")
 	}
+	log.Printf("ユーザーの取得または作成が完了: user_id=%d, isNew=%v", user.UserID, isNew)
 
 	if isNew {
 		log.Printf("新規ユーザー登録完了: user_id=%d, firebase_id=%s", user.UserID, user.FirebaseID)
@@ -163,6 +165,8 @@ func (h *AuthHandler) findOrCreateUser(ctx context.Context, token *auth.Token) (
 		return nil, nil, false, fmt.Errorf("ユーザー検索エラー: %v", err)
 	}
 
+	log.Printf("新規ユーザー作成開始: firebase_id=%s", token.UID)
+
 	// トランザクション開始
 	tx, err := h.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -177,8 +181,6 @@ func (h *AuthHandler) findOrCreateUser(ctx context.Context, token *auth.Token) (
 			}
 		}
 	}()
-
-	log.Printf("新規ユーザー作成開始: firebase_id=%s", token.UID)
 
 	// 新規ユーザーの作成
 	now := null.TimeFrom(time.Now())
