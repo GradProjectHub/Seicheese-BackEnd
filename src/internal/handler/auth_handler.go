@@ -59,6 +59,7 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "トークンが必要です")
 	}
 	token := strings.TrimPrefix(authHeader, "Bearer ")
+	log.Printf("トークン取得完了: %s", token[:10]) // トークンの最初の10文字のみログ出力
 
 	verifiedToken, err := h.AuthClient.VerifyIDToken(ctx, token)
 	if err != nil {
@@ -67,12 +68,14 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 	}
 	log.Printf("トークン検証成功: firebase_id=%s", verifiedToken.UID)
 
-	// ユーザーの取得または作成
+	// ユーザーの取得または作成を試行
+	log.Printf("findOrCreateUser呼び出し開始: firebase_id=%s", verifiedToken.UID)
 	user, point, isNew, err := h.findOrCreateUser(ctx, verifiedToken)
 	if err != nil {
 		log.Printf("ユーザー取得/作成エラー: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の処理に失敗しました")
 	}
+	log.Printf("findOrCreateUser呼び出し完了: firebase_id=%s, is_new=%v", verifiedToken.UID, isNew)
 
 	if isNew {
 		log.Printf("新規ユーザー登録完了: user_id=%d, firebase_id=%s", user.UserID, user.FirebaseID)
@@ -148,7 +151,14 @@ func (h *AuthHandler) findOrCreateUser(ctx context.Context, token *auth.Token) (
 		qm.Where("firebase_id = ?", token.UID),
 	).One(ctx, h.DB)
 
-	if err == nil {
+	if err != nil && err != sql.ErrNoRows {
+		log.Printf("ユーザー検索エラー: %v", err)
+		return nil, nil, false, fmt.Errorf("ユーザー検索エラー: %v", err)
+	}
+
+	if err == sql.ErrNoRows {
+		log.Printf("新規ユーザーとして処理開始: firebase_id=%s", token.UID)
+	} else {
 		log.Printf("既存ユーザーを検出: firebase_id=%s, user_id=%d", token.UID, existingUser.UserID)
 		// 既存ユーザーのポイント情報を取得
 		point, err := models.Points(
@@ -159,11 +169,6 @@ func (h *AuthHandler) findOrCreateUser(ctx context.Context, token *auth.Token) (
 			return nil, nil, false, fmt.Errorf("ポイント情報の取得に失敗: %v", err)
 		}
 		return existingUser, point, false, nil
-	}
-
-	if err != sql.ErrNoRows {
-		log.Printf("ユーザー検索エラー: %v", err)
-		return nil, nil, false, fmt.Errorf("ユーザー検索エラー: %v", err)
 	}
 
 	// トランザクション開始
