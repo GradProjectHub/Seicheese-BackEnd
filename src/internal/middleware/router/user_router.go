@@ -17,6 +17,9 @@ func RegisterUserRoutes(e *echo.Echo, userHandler *handler.UserHandler, authMidd
 	// ユーザー情報の取得
 	userGroup.GET("/me", userHandler.GetUser)
 
+	// ユーザーのポイント情報取得
+	userGroup.GET("/me/points", userHandler.GetUserPoints)
+
 	// ユーザー登録
 	userGroup.POST("", userHandler.RegisterUser)
 }
