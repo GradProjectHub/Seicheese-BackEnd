@@ -52,91 +52,94 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 	ctx := c.Request().Context()
 	requestID := c.Response().Header().Get(echo.HeaderXRequestID)
 
-	// トークンの取得
+	// トークンの取得と検証
 	authHeader := c.Request().Header.Get("Authorization")
 	if authHeader == "" {
-		c.Logger().Error("トークンが見つかりません", "request_id", requestID)
 		return echo.NewHTTPError(http.StatusUnauthorized, "トークンが必要です")
 	}
 	token := strings.TrimPrefix(authHeader, "Bearer ")
 
-	// トークン検証
 	verifiedToken, err := h.AuthClient.VerifyIDToken(ctx, token)
 	if err != nil {
-		c.Logger().Error("トークン検証エラー", "request_id", requestID, "error", err)
 		return echo.NewHTTPError(http.StatusUnauthorized, "無効なトークンです")
 	}
-	c.Logger().Info("トークン検証成功", "request_id", requestID, "firebase_id", verifiedToken.UID)
+
+	// トランザクション開始
+	tx, err := h.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクション開始に失敗しました")
+	}
+
+	committed := false
+	defer func() {
+		if !committed {
+			if rbErr := tx.Rollback(); rbErr != nil {
+				log.Printf("トランザクションのロールバックに失敗: %v", rbErr)
+			}
+		}
+	}()
 
 	// ユーザーの存在確認
 	user, err := models.Users(
 		qm.Where("firebase_id = ?", verifiedToken.UID),
-	).One(ctx, h.DB)
+	).One(ctx, tx)
 
 	if err == sql.ErrNoRows {
-		c.Logger().Info("新規ユーザー登録開始", "request_id", requestID, "firebase_id", verifiedToken.UID)
-		
-		// トランザクション開始
-		tx, err := h.DB.BeginTx(ctx, nil)
-		if err != nil {
-			log.Printf("トランザクション開始エラー: %v", err)
-			return echo.NewHTTPError(http.StatusInternalServerError, "Failed to begin transaction")
-		}
-
-		// トランザクション管理
-		committed := false
-		defer func() {
-			if !committed {
-				log.Printf("トランザクションのロールバック開始")
-				if rbErr := tx.Rollback(); rbErr != nil {
-					log.Printf("トランザクションのロールバックに失敗: %v", rbErr)
-				}
-				log.Printf("トランザクションのロールバック完了")
-			}
-		}()
-
-		// ユーザー作成
+		// 新規ユーザー作成
 		now := null.TimeFrom(time.Now())
-		newUser := &models.User{
+		user = &models.User{
 			FirebaseID: verifiedToken.UID,
 			CreatedAt:  now,
 			UpdatedAt:  now,
 		}
-		
-		log.Printf("新規ユーザー作成開始: firebase_id=%s", verifiedToken.UID)
-		if err := newUser.Insert(ctx, tx, boil.Infer()); err != nil {
-			log.Printf("ユーザー作成エラー: %v", err)
-			return echo.NewHTTPError(http.StatusInternalServerError, "Failed to create user")
-		}
-		log.Printf("ユーザー作成完了: user_id=%d", newUser.UserID)
 
-		// ポイント情報作成
-		if err := h.createInitialPoint(ctx, tx, newUser); err != nil {
-			log.Printf("ポイント情報作成エラー: %v", err)
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		if err := user.Insert(ctx, tx, boil.Infer()); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー作成に失敗しました")
 		}
 
-		log.Printf("トランザクションのコミット開始")
+		// トリガーによるポイント作成を待つ
+		time.Sleep(100 * time.Millisecond)
+
 		if err := tx.Commit(); err != nil {
-			log.Printf("トランザクションのコミットに失敗: %v", err)
-			return echo.NewHTTPError(http.StatusInternalServerError, "Failed to commit transaction")
+			return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションのコミットに失敗しました")
 		}
 		committed = true
-		log.Printf("トランザクションをコミット完了")
+
+		// ポイント情報の確認
+		point, err := models.Points(
+			qm.Where("user_id = ?", user.UserID),
+		).One(ctx, h.DB)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の作成に失敗しました")
+		}
 
 		return c.JSON(http.StatusCreated, map[string]interface{}{
 			"message": "ユーザーを新規登録しました",
-			"user":    newUser,
+			"user":    user,
+			"point":   point,
 		})
 	} else if err != nil {
-		c.Logger().Error("データベースエラー", "request_id", requestID, "error", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "データベースエラー")
 	}
 
-	c.Logger().Info("既存ユーザーのサインイン成功", "request_id", requestID, "user_id", user.UserID)
+	// 既存ユーザーの場合はトランザクションをコミット
+	if err := tx.Commit(); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションのコミットに失敗しました")
+	}
+	committed = true
+
+	// ポイント情報を取得
+	point, err := models.Points(
+		qm.Where("user_id = ?", user.UserID),
+	).One(ctx, h.DB)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の取得に失敗しました")
+	}
+
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"message": "サインインに成功しました",
 		"user":    user,
+		"point":   point,
 	})
 }
 
