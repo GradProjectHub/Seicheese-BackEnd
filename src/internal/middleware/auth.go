@@ -17,6 +17,7 @@ import (
 	"firebase.google.com/go/v4/auth"
 	"github.com/labstack/echo/v4"
 	"github.com/volatiletech/sqlboiler/v4/queries/qm"
+	"github.com/volatiletech/null"
 )
 
 type AuthMiddleware struct {
@@ -62,8 +63,21 @@ func (m *AuthMiddleware) FirebaseAuthMiddleware() echo.MiddlewareFunc {
 			}
 			if !exists {
 				log.Printf("ユーザーが存在しません: firebase_id=%s", tokenVerified.UID)
-				log.Printf("ユーザーが存在しないため、認証エラーを返します")
-				return echo.NewHTTPError(http.StatusUnauthorized, "ユーザーが登録されていません。再度サインインしてください。")
+				log.Printf("ユーザーが存在しないため、新規ユーザー作成処理に進みます")
+				userHandler := &UserHandler{DB: m.DB}
+				newUser := &models.User{
+					FirebaseID: tokenVerified.UID,
+					CreatedAt:  null.TimeFrom(time.Now()),
+					UpdatedAt:  null.TimeFrom(time.Now()),
+				}
+				user, err := userHandler.RegisterUser(newUser)
+				if err != nil {
+					log.Printf("ユーザー登録エラー: %v", err)
+					return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー登録に失敗しました")
+				}
+				log.Printf("新規ユーザー登録完了: user_id=%d, firebase_id=%s", user.UserID, user.FirebaseID)
+			} else {
+				log.Printf("ユーザーが存在します: firebase_id=%s", tokenVerified.UID)
 			}
 
 			c.Set("firebase_token", idToken)
