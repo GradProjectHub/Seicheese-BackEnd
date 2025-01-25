@@ -248,20 +248,20 @@ func (h *AuthHandler) findOrCreateUser(ctx context.Context, tx *sql.Tx, token *a
 
 	log.Printf("新規ユーザー作成完了: user_id=%d, firebase_id=%s", newUser.UserID, newUser.FirebaseID)
 
-	// ポイント情報の作成
-	point := &models.Point{
-		UserID:       newUser.UserID,
-		CurrentPoint: 0,
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
+	// トリガーによるポイント作成を待機
+	log.Printf("トリガーによるポイント作成の待機開始: user_id=%d", newUser.UserID)
+	time.Sleep(200 * time.Millisecond)
+	log.Printf("トリガーによるポイント作成の待機完了: user_id=%d", newUser.UserID)
+
+	// ポイント情報の取得
+	point, err := models.Points(
+		qm.Where("user_id = ?", newUser.UserID),
+	).One(ctx, tx)
+	if err != nil {
+		log.Printf("ポイント情報の取得に失敗: %v", err)
+		return nil, nil, false, fmt.Errorf("ポイント情報の取得に失敗: %v", err)
 	}
 
-	if err := point.Insert(ctx, tx, boil.Infer()); err != nil {
-		log.Printf("ポイント情報作成エラー: %v", err)
-		return nil, nil, false, fmt.Errorf("ポイント情報作成エラー: %v", err)
-	}
-
-	log.Printf("ポイント情報作成完了: user_id=%d", newUser.UserID)
 	return newUser, point, true, nil
 }
 
