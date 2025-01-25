@@ -78,50 +78,13 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 		}
 	}()
 
-	// ユーザーの存在確認
-	user, err := models.Users(
-		qm.Where("firebase_id = ?", verifiedToken.UID),
-	).One(ctx, tx)
-
-	if err == sql.ErrNoRows {
-		// 新規ユーザー作成
-		now := null.TimeFrom(time.Now())
-		user = &models.User{
-			FirebaseID: verifiedToken.UID,
-			CreatedAt:  now,
-			UpdatedAt:  now,
-		}
-
-		if err := user.Insert(ctx, tx, boil.Infer()); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー作成に失敗しました")
-		}
-
-		// トリガーによるポイント作成を待つ
-		time.Sleep(100 * time.Millisecond)
-
-		if err := tx.Commit(); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションのコミットに失敗しました")
-		}
-		committed = true
-
-		// ポイント情報の確認
-		point, err := models.Points(
-			qm.Where("user_id = ?", user.UserID),
-		).One(ctx, h.DB)
-		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の作成に失敗しました")
-		}
-
-		return c.JSON(http.StatusCreated, map[string]interface{}{
-			"message": "ユーザーを新規登録しました",
-			"user":    user,
-			"point":   point,
-		})
-	} else if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "データベースエラー")
+	// ユーザーの取得または作成
+	user, err := h.findOrCreateUser(ctx, verifiedToken)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザーの取得または作成に失敗しました")
 	}
 
-	// 既存ユーザーの場合はトランザクションをコミット
+	// トランザクションをコミット
 	if err := tx.Commit(); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションのコミットに失敗しました")
 	}
@@ -193,20 +156,32 @@ func extractIDToken(c echo.Context) string {
 // ユーザー情報の取得または作成
 func (h *AuthHandler) findOrCreateUser(ctx context.Context, token *auth.Token) (*models.User, error) {
 	// 既存ユーザーの検索
-	user, err := models.Users(models.UserWhere.FirebaseID.EQ(token.UID)).One(ctx, h.DB)
+	user, err := models.Users(
+		qm.Where("firebase_id = ?", token.UID),
+	).One(ctx, h.DB)
+	
 	if err == nil {
 		return user, nil
 	}
+	
+	if err != sql.ErrNoRows {
+		return nil, fmt.Errorf("ユーザー検索エラー: %v", err)
+	}
 
 	// 新規ユーザーの作成
+	now := null.TimeFrom(time.Now())
 	newUser := &models.User{
 		FirebaseID: token.UID,
-		CreatedAt:  null.TimeFrom(time.Now()),
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
 
 	if err := newUser.Insert(ctx, h.DB, boil.Infer()); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ユーザー作成エラー: %v", err)
 	}
+
+	// トリガーによるポイント作成を待つ
+	time.Sleep(100 * time.Millisecond)
 
 	return newUser, nil
 }
