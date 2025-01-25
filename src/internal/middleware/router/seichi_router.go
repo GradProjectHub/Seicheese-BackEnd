@@ -13,7 +13,7 @@ func RegisterSeichiRoutes(e *echo.Echo, seichiHandler *handler.SeichiHandler, au
 	authMiddleware := middleware.NewAuthMiddleware(authClient, seichiHandler.DB)
 
 	// 聖地関連のルーティンググループ
-	seichiGroup := e.Group("/api/seichies")
+	seichiGroup := e.Group("/seichies")
 
 	// すべてのエンドポイントで認証が必要
 	seichiGroup.Use(authMiddleware.FirebaseAuthMiddleware())

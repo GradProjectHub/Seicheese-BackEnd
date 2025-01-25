@@ -26,11 +26,10 @@ func RegisterAuthRoutes(e *echo.Echo, authClient *auth.Client, authHandler *hand
 	auth.POST("/signout", authHandler.SignOut)      // サインアウト
 
 	// 認証が必要なエンドポイント
-	api := e.Group("/api")
-	api.Use(authMiddleware.FirebaseAuthMiddleware())
+	users := e.Group("/users")
+	users.Use(authMiddleware.FirebaseAuthMiddleware())
 
 	// ユーザー関連のエンドポイント
-	users := api.Group("/users")
 	users.GET("/me", authHandler.GetCurrentUser)      // ユーザー情報取得
 	users.PUT("/me", authHandler.UpdateUser)          // ユーザー情報更新
 	users.DELETE("/me", authHandler.DeleteUser)       // アカウント削除

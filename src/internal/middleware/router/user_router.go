@@ -9,7 +9,7 @@ import (
 
 func RegisterUserRoutes(e *echo.Echo, userHandler *handler.UserHandler, authMiddleware *middleware.AuthMiddleware) {
 	// ユーザー関連のルーティンググループ
-	userGroup := e.Group("/api/users")
+	userGroup := e.Group("/users")
 
 	// すべてのエンドポイントで認証が必要
 	userGroup.Use(authMiddleware.FirebaseAuthMiddleware())
