@@ -19,7 +19,7 @@ func RegisterPlaceRoutes(e *echo.Echo, placeHandler *handler.PlaceHandler, authC
 	placeGroup.Use(authMiddleware.FirebaseAuthMiddleware())
 
 	// 場所の取得
-	placeGroup.GET("", placeHandler.GetPlaces)
+	placeGroup.GET("", placeHandler.GetPlace)
 
 	// 場所の登録
 	placeGroup.POST("", placeHandler.RegisterPlace)
