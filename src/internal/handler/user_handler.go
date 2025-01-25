@@ -103,12 +103,14 @@ func (h *UserHandler) RegisterUser(c echo.Context) error {
 	log.Printf("ユーザーを作成しました: user_id=%d", user.UserID)
 
 	// ポイントレコードを作成
+	log.Printf("ポイントレコード作成開始: user_id=%d", user.UserID)
 	newPoint := &models.Point{
 		UserID:       user.UserID,
 		CurrentPoint: 0,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
+	log.Printf("ポイントレコード作成データ: %+v", newPoint)
 
 	if err := newPoint.Insert(c.Request().Context(), tx, boil.Infer()); err != nil {
 		txErr = err
