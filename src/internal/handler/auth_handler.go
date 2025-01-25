@@ -114,21 +114,21 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 
 		// ユーザー作成
 		now := null.TimeFrom(time.Now())
-		user := &models.User{
+		newUser := &models.User{
 			FirebaseID: verifiedToken.UID,
 			CreatedAt:  now,
 			UpdatedAt:  now,
 		}
 		
 		log.Printf("新規ユーザー作成開始: firebase_id=%s", verifiedToken.UID)
-		if err := user.Insert(ctx, tx, boil.Infer()); err != nil {
+		if err := newUser.Insert(ctx, tx, boil.Infer()); err != nil {
 			log.Printf("ユーザー作成エラー: %v", err)
 			return echo.NewHTTPError(http.StatusInternalServerError, "Failed to create user")
 		}
-		log.Printf("ユーザー作成完了: user_id=%d", user.UserID)
+		log.Printf("ユーザー作成完了: user_id=%d", newUser.UserID)
 
 		// ポイント情報作成
-		if err := h.createInitialPoint(ctx, tx, user.UserID); err != nil {
+		if err := h.createInitialPoint(ctx, tx, newUser.UserID); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
 
@@ -142,7 +142,7 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 
 		return c.JSON(http.StatusCreated, map[string]interface{}{
 			"message": "ユーザーを新規登録しました",
-			"user":    user,
+			"user":    newUser,
 		})
 	} else if err != nil {
 		c.Logger().Error("データベースエラー", "request_id", requestID, "error", err)
