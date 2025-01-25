@@ -87,7 +87,6 @@ func (h *UserHandler) RegisterUser(c echo.Context) error {
 	now := time.Now()
 	user := &models.User{
 		FirebaseID: uid,
-		Name:       req.Name,
 		CreatedAt:  null.TimeFrom(now),
 		UpdatedAt:  null.TimeFrom(now),
 	}
@@ -133,11 +132,10 @@ func (h *UserHandler) RegisterUser(c echo.Context) error {
 
 	log.Printf("トランザクションをコミットしました")
 
-	return c.JSON(http.StatusCreated, UserResponse{
-		ID:        user.UserID,
-		Name:      user.Name,
-		CreatedAt: user.CreatedAt.Time,
-		UpdatedAt: user.UpdatedAt.Time,
+	return c.JSON(http.StatusCreated, map[string]interface{}{
+		"user_id":    user.UserID,
+		"created_at": user.CreatedAt.Time,
+		"updated_at": user.UpdatedAt.Time,
 	})
 }
 
