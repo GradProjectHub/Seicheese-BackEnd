@@ -159,12 +159,12 @@ func (h *AuthHandler) findOrCreateUser(ctx context.Context, tx *sql.Tx, token *a
 	user, err := models.Users(
 		qm.Where("firebase_id = ?", token.UID),
 	).One(ctx, tx)
-	
+
 	if err == nil {
 		log.Printf("既存ユーザーを検出: firebase_id=%s", token.UID)
 		return user, nil
 	}
-	
+
 	if err != sql.ErrNoRows {
 		log.Printf("ユーザー検索エラー: %v", err)
 		return nil, fmt.Errorf("ユーザー検索エラー: %v", err)
