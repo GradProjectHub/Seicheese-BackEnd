@@ -38,7 +38,7 @@ func (h *AuthHandler) createInitialPoint(ctx context.Context, tx *sql.Tx, user *
 		UpdatedAt:    time.Now(),
 	}
 	
-	if err := user.SetPoint(ctx, tx, true, point); err != nil {
+	if err := point.Insert(ctx, tx, boil.Infer()); err != nil {
 		log.Printf("ポイントレコード作成エラー: %v", err)
 		return fmt.Errorf("failed to create point record: %v", err)
 	}
