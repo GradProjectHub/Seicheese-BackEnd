@@ -63,7 +63,7 @@ func (m *AuthMiddleware) FirebaseAuthMiddleware() echo.MiddlewareFunc {
 
 			if !exists {
 				log.Printf("ユーザーが存在しません: firebase_id=%s", tokenVerified.UID)
-				// /auth/signin 以外のエンドポイントへのアクセスの場合は401を返す
+				// /auth/signin エンドポイントへのアクセスは許可
 				if c.Path() != "/auth/signin" {
 					return echo.NewHTTPError(http.StatusUnauthorized, "ユーザーが登録されていません。再度サインインしてください。")
 				}
