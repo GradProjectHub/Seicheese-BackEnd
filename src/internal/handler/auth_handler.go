@@ -50,7 +50,6 @@ func (h *AuthHandler) createInitialPoint(ctx context.Context, tx *sql.Tx, user *
 // SignIn handler
 func (h *AuthHandler) SignIn(c echo.Context) error {
 	ctx := c.Request().Context()
-	requestID := c.Response().Header().Get(echo.HeaderXRequestID)
 
 	// トークンの取得と検証
 	authHeader := c.Request().Header.Get("Authorization")
