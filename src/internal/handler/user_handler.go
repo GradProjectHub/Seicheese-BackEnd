@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"seicheese/models"
+	"strconv"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -315,4 +316,44 @@ func (h *UserHandler) GetOrCreateUser(ctx context.Context, firebaseID string) (*
 	}
 
 	return user, false, nil
+}
+
+// ポイント取得API
+func (h *UserHandler) GetUserPoints(c echo.Context) error {
+	// ユーザーIDをクエリパラメータから取得
+	userIDStr := c.QueryParam("user_id")
+	if userIDStr == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "ユーザーIDが必要です",
+		})
+	}
+
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "不正なユーザーIDです",
+		})
+	}
+
+	// ポイント情報の取得
+	point, err := models.Points(
+		models.PointWhere.UserID.EQ(userID),
+	).One(c.Request().Context(), h.DB)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// ポイントが存在しない場合は0を返す
+			return c.JSON(http.StatusOK, map[string]interface{}{
+				"user_id": userID,
+				"points": 0,
+			})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "ポイント情報の取得に失敗しました",
+		})
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"user_id": userID,
+		"points": point.CurrentPoint,
+	})
 }

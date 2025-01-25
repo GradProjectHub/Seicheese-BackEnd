@@ -250,45 +250,41 @@ func (h *SeichiHandler) GetSeichies(c echo.Context) error {
 	).All(c.Request().Context(), h.DB)
 
 	if err != nil {
-		log.Printf("Error fetching seichies: %v", err)
+		if err == sql.ErrNoRows {
+			return c.JSON(http.StatusOK, []SeichiResponse{})
+		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "聖地データの取得に失敗しました",
 		})
 	}
 
-	var response []map[string]interface{}
-	for _, s := range seichies {
-		contentName := ""
-		if s.R != nil && s.R.Content != nil {
-			contentName = s.R.Content.ContentName
+	// レスポンス用のデータを作成
+	var response []SeichiResponse
+	for _, seichi := range seichies {
+		lat, _ := seichi.Latitude.Float64()
+		lng, _ := seichi.Longitude.Float64()
+		
+		seichiResp := SeichiResponse{
+			ID:          seichi.SeichiID,
+			Name:        seichi.SeichiName,
+			Description: seichi.Comment.String,
+			Latitude:    lat,
+			Longitude:   lng,
+			ContentID:   seichi.ContentID,
+			Address:     seichi.R.Place.Address,
+			PostalCode:  seichi.R.Place.ZipCode,
+			CreatedAt:   seichi.CreatedAt,
+			UpdatedAt:   seichi.UpdatedAt,
 		}
 
-		address := ""
-		postalCode := ""
-		if s.R != nil && s.R.Place != nil {
-			address = s.R.Place.Address
-			postalCode = s.R.Place.ZipCode
+		if seichi.R.Content != nil {
+			seichiResp.ContentName = seichi.R.Content.ContentName
+			seichiResp.GenreID = seichi.R.Content.GenreID
 		}
 
-		latitude, _ := s.Latitude.Float64()
-		longitude, _ := s.Longitude.Float64()
-
-		response = append(response, map[string]interface{}{
-			"id":           s.SeichiID,
-			"name":         s.SeichiName,
-			"description":  s.Comment.String,
-			"latitude":     latitude,
-			"longitude":    longitude,
-			"content_id":   s.ContentID,
-			"content_name": contentName,
-			"address":      address,
-			"postal_code":  postalCode,
-			"created_at":   s.CreatedAt.Time.Format(time.RFC3339),
-			"updated_at":   s.UpdatedAt.Time.Format(time.RFC3339),
-		})
+		response = append(response, seichiResp)
 	}
 
-	c.Response().Header().Set("Content-Type", "application/json; charset=utf-8")
 	return c.JSON(http.StatusOK, response)
 }
 
