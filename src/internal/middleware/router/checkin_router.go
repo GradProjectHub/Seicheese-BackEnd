@@ -12,12 +12,30 @@ import (
 func RegisterCheckinRoutes(e *echo.Echo, checkinHandler *handler.CheckinHandler, authMiddleware *middleware.AuthMiddleware) {
 	fmt.Printf("チェックインルーター登録開始\n")
 
-	// 直接ルートに登録
-	e.POST("/checkins", checkinHandler.Checkin, authMiddleware.FirebaseAuthMiddleware())
+	// チェックイン関連のルーティンググループ
+	checkinGroup := e.Group("/checkins")
+
+	// デバッグログ用のミドルウェア
+	checkinGroup.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			fmt.Printf("===== チェックインリクエスト受信 =====\n")
+			fmt.Printf("Method: %s\n", c.Request().Method)
+			fmt.Printf("Path: %s\n", c.Request().URL.Path)
+			fmt.Printf("Full URL: %s\n", c.Request().URL.String())
+			return next(c)
+		}
+	})
+
+	// チェックインの実行（認証なしでも実行可能に）
+	checkinGroup.POST("", checkinHandler.Checkin)
 	fmt.Printf("POSTルート登録: /checkins\n")
 
-	// GETルートも同様に直接登録
-	e.GET("/checkins", checkinHandler.GetUserCheckins, authMiddleware.FirebaseAuthMiddleware())
+	// 認証が必要なエンドポイント
+	authGroup := checkinGroup.Group("")
+	authGroup.Use(authMiddleware.FirebaseAuthMiddleware())
+
+	// チェックイン履歴の取得
+	authGroup.GET("", checkinHandler.GetUserCheckins)
 	fmt.Printf("GETルート登録: /checkins\n")
 
 	fmt.Printf("チェックインルーター登録完了\n")
