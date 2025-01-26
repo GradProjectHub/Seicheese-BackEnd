@@ -121,7 +121,9 @@ func (h *CheckinHandler) Checkin(c echo.Context) error {
 	// UIDの取得
 	uid := c.Get("uid").(string)
 	if uid == "" {
-		return echo.NewHTTPError(http.StatusBadRequest, "ユーザーIDが必要です")
+		return echo.NewHTTPError(http.StatusBadRequest, map[string]string{
+			"message": "ユーザーIDが必要です",
+		})
 	}
 
 	// リクエストボディの解析
@@ -132,10 +134,27 @@ func (h *CheckinHandler) Checkin(c echo.Context) error {
 	}
 	if err := c.Bind(&req); err != nil {
 		fmt.Printf("リクエストボディのバインドエラー: %v\n", err)
-		return echo.NewHTTPError(http.StatusBadRequest, "不正なリクエスト形式")
+		return echo.NewHTTPError(http.StatusBadRequest, map[string]string{
+			"message": "不正なリクエスト形式",
+		})
 	}
 
 	fmt.Printf("リクエストボディ: %+v\n", req)
+
+	// 聖地の存在確認
+	seichi, err := models.Seichies(
+		models.SeichiWhere.SeichiID.EQ(req.SeichiID),
+	).One(ctx, h.DB)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return echo.NewHTTPError(http.StatusNotFound, map[string]string{
+				"message": "指定された聖地が見つかりません",
+			})
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, map[string]string{
+			"message": "聖地情報の取得に失敗しました",
+		})
+	}
 
 	// ユーザー情報の取得
 	user, err := models.Users(
@@ -143,13 +162,17 @@ func (h *CheckinHandler) Checkin(c echo.Context) error {
 	).One(ctx, h.DB)
 	if err != nil {
 		fmt.Printf("ユーザー情報取得エラー: %v\n", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の取得に失敗")
+		return echo.NewHTTPError(http.StatusInternalServerError, map[string]string{
+			"message": "ユーザー情報の取得に失敗しました",
+		})
 	}
 
 	// ポイントとスタンプの計算
 	points, stampID, err := h.calculatePoints(c, user.UserID, req.SeichiID)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "ポイント計算に失敗")
+		return echo.NewHTTPError(http.StatusInternalServerError, map[string]string{
+			"message": "ポイント計算に失敗しました",
+		})
 	}
 
 	// チェックインログの作成
@@ -162,13 +185,17 @@ func (h *CheckinHandler) Checkin(c echo.Context) error {
 	// トランザクション開始
 	tx, err := h.DB.BeginTx(ctx, nil)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクション開始に失敗")
+		return echo.NewHTTPError(http.StatusInternalServerError, map[string]string{
+			"message": "トランザクション開始に失敗しました",
+		})
 	}
 	defer tx.Rollback()
 
 	// チェックインログの保存
 	if err := checkinLog.Insert(ctx, tx, boil.Infer()); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "チェックイン処理に失敗")
+		return echo.NewHTTPError(http.StatusInternalServerError, map[string]string{
+			"message": "チェックイン処理に失敗しました",
+		})
 	}
 
 	// ユーザーのポイントを取得
@@ -176,7 +203,9 @@ func (h *CheckinHandler) Checkin(c echo.Context) error {
 		models.PointWhere.UserID.EQ(user.UserID),
 	).One(ctx, tx)
 	if err != nil && err != sql.ErrNoRows {
-		return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の取得に失敗")
+		return echo.NewHTTPError(http.StatusInternalServerError, map[string]string{
+			"message": "ポイント情報の取得に失敗しました",
+		})
 	}
 
 	// ポイントレコードが存在しない場合は新規作成
@@ -186,19 +215,25 @@ func (h *CheckinHandler) Checkin(c echo.Context) error {
 			CurrentPoint: points,
 		}
 		if err := userPoint.Insert(ctx, tx, boil.Infer()); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の作成に失敗")
+			return echo.NewHTTPError(http.StatusInternalServerError, map[string]string{
+				"message": "ポイント情報の作成に失敗しました",
+			})
 		}
 	} else {
 		// 既存のポイントを更新
 		userPoint.CurrentPoint += points
 		if _, err := userPoint.Update(ctx, tx, boil.Infer()); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "ポイント更新に失敗")
+			return echo.NewHTTPError(http.StatusInternalServerError, map[string]string{
+				"message": "ポイント更新に失敗しました",
+			})
 		}
 	}
 
 	// トランザクションのコミット
 	if err := tx.Commit(); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションのコミットに失敗")
+		return echo.NewHTTPError(http.StatusInternalServerError, map[string]string{
+			"message": "トランザクションのコミットに失敗しました",
+		})
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
