@@ -140,7 +140,15 @@ func (h *AuthHandler) RegisterUser(c echo.Context) error {
 			return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の作成に失敗しました")
 		}
 
-		log.Printf("ポイント情報を作成しました: user_id=%d", user.UserID)
+		// ポイントを1000に更新
+		point.CurrentPoint = 1000
+		point.UpdatedAt = now
+		if _, err := point.Update(ctx, h.DB, boil.Infer()); err != nil {
+			log.Printf("ポイント更新エラー: %v", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "ポイントの更新に失敗しました")
+		}
+
+		log.Printf("ポイント情報を作成しました: user_id=%d, points=%d", user.UserID, point.CurrentPoint)
 
 	} else if err != nil {
 		log.Printf("ユーザー情報の取得に失敗: %v", err)
