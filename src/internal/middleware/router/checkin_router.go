@@ -8,10 +8,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-func RegisterCheckinRoutes(e *echo.Echo, checkinHandler *handler.CheckinHandler, authClient *auth.Client) {
-	// 認証ミドルウェアの初期化
-	authMiddleware := middleware.NewAuthMiddleware(authClient, checkinHandler.DB)
-
+func RegisterCheckinRoutes(e *echo.Echo, checkinHandler *handler.CheckinHandler, authMiddleware *middleware.AuthMiddleware) {
 	// チェックイン関連のルーティンググループ
 	checkinGroup := e.Group("/checkins")
 
