@@ -464,10 +464,58 @@ func (h *AuthHandler) SignOut(c echo.Context) error {
 }
 
 func (h *AuthHandler) DeleteUser(c echo.Context) error {
-	// ユーザー削除処理の実装
-	log.Printf("ユーザー削除処理開始")
-	// 必要な処理を追加
-	return c.JSON(http.StatusOK, map[string]string{"message": "ユーザーが削除されました"})
+	ctx := c.Request().Context()
+	uid := c.Get("uid").(string)
+	
+	// トランザクション開始
+	tx, err := h.DB.BeginTx(ctx, nil)
+	if err != nil {
+		log.Printf("トランザクション開始エラー: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションの開始に失敗しました")
+	}
+	defer tx.Rollback()
+
+	// ユーザー情報の取得
+	user, err := models.Users(
+		models.UserWhere.FirebaseID.EQ(uid),
+	).One(ctx, h.DB)
+	if err != nil {
+		log.Printf("ユーザー情報取得エラー: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の取得に失敗しました")
+	}
+
+	// 関連データの削除
+	// 1. チェックインログの削除
+	if _, err := models.CheckinLogs(
+		models.CheckinLogWhere.UserID.EQ(user.UserID),
+	).DeleteAll(ctx, tx); err != nil {
+		log.Printf("チェックインログ削除エラー: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "チェックインログの削除に失敗しました")
+	}
+
+	// 2. ポイント情報の削除
+	if _, err := models.Points(
+		models.PointWhere.UserID.EQ(user.UserID),
+	).DeleteAll(ctx, tx); err != nil {
+		log.Printf("ポイント情報削除エラー: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の削除に失敗しました")
+	}
+
+	// 3. ユーザー情報の削除
+	if _, err := user.Delete(ctx, tx); err != nil {
+		log.Printf("ユーザー削除エラー: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の削除に失敗しました")
+	}
+
+	// トランザクションのコミット
+	if err := tx.Commit(); err != nil {
+		log.Printf("トランザクションコミットエラー: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションのコミットに失敗しました")
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{
+		"message": "アカウントが正常に削除されました",
+	})
 }
 
 func (h *AuthHandler) GetUserPoints(c echo.Context) error {
