@@ -139,51 +139,41 @@ func (h *CheckinHandler) Checkin(c echo.Context) error {
 	// 必ずDBへの挿入を試みる
 	fmt.Printf("DBへの挿入を試みます...\n")
 
-	// トランザクション開始
-	tx, err := h.DB.BeginTx(ctx, nil)
+	// 現在時刻を取得（ナノ秒まで）
+	now := time.Now().JTC()
+	fmt.Printf("挿入時刻: %v\n", now)
+
+	// SQLを直接実行してみる
+	query := `
+		INSERT INTO checkin_logs (created_at, user_id, seichi_id)
+		VALUES (?, ?, ?)
+	`
+	fmt.Printf("実行するSQL: %s\n", query)
+	fmt.Printf("パラメータ: created_at=%v, user_id=%d, seichi_id=%d\n", now, 1, req.SeichiID)
+
+	result, err := h.DB.ExecContext(ctx, query, now, 1, req.SeichiID)
 	if err != nil {
-		fmt.Printf("トランザクション開始エラー: %v\n", err)
-		// 新しいトランザクションを試みる
-		tx, err = h.DB.BeginTx(ctx, nil)
-		if err != nil {
-			fmt.Printf("2回目のトランザクション開始も失敗: %v\n", err)
-			return echo.NewHTTPError(http.StatusInternalServerError, "DB接続エラー")
-		}
-	}
-	defer tx.Rollback()
-
-	// チェックインログの作成
-	checkinLog := &models.CheckinLog{
-		UserID:    1, // デフォルトユーザー
-		SeichiID:  req.SeichiID,
-		CreatedAt: time.Now(),
+		fmt.Printf("SQL実行エラー: %v\n", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("DB挿入エラー: %v", err))
 	}
 
-	fmt.Printf("挿入するデータ: %+v\n", checkinLog)
+	rowsAffected, err := result.RowsAffected()
+	fmt.Printf("影響を受けた行数: %d\n", rowsAffected)
 
-	// チェックインログの保存
-	if err := checkinLog.Insert(ctx, tx, boil.Infer()); err != nil {
-		fmt.Printf("チェックインログ保存エラー: %v\n", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "DB挿入エラー")
+	if rowsAffected == 0 {
+		fmt.Printf("行が挿入されませんでした\n")
+		return echo.NewHTTPError(http.StatusInternalServerError, "チェックインの記録に失敗しました")
 	}
 
 	fmt.Printf("チェックインログの保存成功\n")
-
-	// トランザクションのコミット
-	if err := tx.Commit(); err != nil {
-		fmt.Printf("トランザクションコミットエラー: %v\n", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "コミットエラー")
-	}
-
-	fmt.Printf("トランザクションのコミット成功\n")
 	fmt.Printf("===== チェックイン処理完了 =====\n")
 
 	return c.JSON(http.StatusCreated, map[string]interface{}{
 		"message": "チェックイン成功",
 		"checkin": map[string]interface{}{
-			"created_at": checkinLog.CreatedAt,
-			"user_id":   checkinLog.UserID,
-			"seichi_id": checkinLog.SeichiID,
+			"created_at": now,
+			"user_id":   1,
+			"seichi_id": req.SeichiID,
 		},
 	})
 }
