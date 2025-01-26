@@ -52,7 +52,7 @@ func (h *AuthHandler) createInitialPoint(ctx context.Context, tx *sql.Tx, user *
 	
 	point := &models.Point{
 		UserID:       user.UserID,
-		CurrentPoint: 0,
+		CurrentPoint: 1000, // 新規ユーザーボーナス
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
 	}
@@ -62,7 +62,7 @@ func (h *AuthHandler) createInitialPoint(ctx context.Context, tx *sql.Tx, user *
 		return fmt.Errorf("failed to create point record: %v", err)
 	}
 	
-	log.Printf("ポイントレコード作成完了: user_id=%d", user.UserID)
+	log.Printf("ポイントレコード作成完了: user_id=%d, initial_points=1000", user.UserID)
 	return nil
 }
 
@@ -128,7 +128,7 @@ func (h *AuthHandler) RegisterUser(c echo.Context) error {
 		// ポイント情報の作成
 		point = models.Point{
 			UserID:       user.UserID,
-			CurrentPoint: 0,
+			CurrentPoint: 1000, // 新規ユーザーボーナス
 			CreatedAt:    now,
 			UpdatedAt:    now,
 		}
