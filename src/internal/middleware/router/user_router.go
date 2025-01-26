@@ -11,16 +11,14 @@ func RegisterUserRoutes(e *echo.Echo, userHandler *handler.UserHandler, authMidd
 	// ユーザー関連のルーティンググループ
 	userGroup := e.Group("/users")
 
-	// 認証不要のエンドポイント
-	userGroup.GET("/me/points", userHandler.GetUserPoints)
-
 	// 認証が必要なエンドポイント
 	authGroup := userGroup.Group("")
 	authGroup.Use(authMiddleware.FirebaseAuthMiddleware())
 
 	// ユーザー情報の取得
 	authGroup.GET("/me", userHandler.GetUser)
-
+	// ポイント情報の取得
+	authGroup.GET("/me/points", userHandler.GetUserPoints)
 	// ユーザー登録
 	authGroup.POST("", userHandler.RegisterUser)
 }
