@@ -69,6 +69,7 @@ func main() {
 	contentHandler := &handler.ContentHandler{
 		DB: db,
 	}
+	checkinHandler := handler.NewCheckinHandler(db)
 
 	// 認証ミドルウェアの初期化
 	authMiddleware := middleware.NewAuthMiddleware(authClient, db)
@@ -86,6 +87,7 @@ func main() {
 	router.RegisterGenreRoutes(e, genreHandler, authMiddleware)
 	router.RegisterSeichiRoutes(e, seichiHandler, authMiddleware)
 	router.RegisterContentRoutes(e, contentHandler, authMiddleware)
+	router.RegisterCheckinRoutes(e, checkinHandler, authClient)
 
 	// サーバー起動
 	port := os.Getenv("PORT")
