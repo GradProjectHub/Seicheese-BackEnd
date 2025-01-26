@@ -13,4 +13,4 @@ END;
 -- +goose Down
 -- +goose StatementBegin
 DROP TRIGGER IF EXISTS after_user_insert;
--- +goose StatementEnd 
+-- +goose StatementEnd
