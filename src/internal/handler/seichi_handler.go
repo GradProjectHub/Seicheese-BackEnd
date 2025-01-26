@@ -86,9 +86,33 @@ func (h *SeichiHandler) RegisterSeichi(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 
+	// バリデーション
+	if req.Name == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "聖地名は必須です")
+	}
+	if req.ContentID == 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "作品IDは必須です")
+	}
+	if req.Latitude < 24.396308 || req.Latitude > 45.551483 {
+		return echo.NewHTTPError(http.StatusBadRequest, "緯度の値が日本の範囲外です")
+	}
+	if req.Longitude < 122.93457 || req.Longitude > 153.986672 {
+		return echo.NewHTTPError(http.StatusBadRequest, "経度の値が日本の範囲外です")
+	}
+
+	// 作品の存在確認
+	content, err := models.Contents(
+		models.ContentWhere.ContentID.EQ(req.ContentID),
+	).One(c.Request().Context(), h.DB)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return echo.NewHTTPError(http.StatusBadRequest, "指定された作品が存在しません")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "作品の確認に失敗しました")
+	}
+
 	// 値の確認
 	log.Printf("Bound request data: %+v", req)
-
 	log.Printf("Received seichi name: %s", req.Name)
 	log.Printf("Received seichi description: %s", req.Description)
 	log.Printf("Received seichi latitude: %f", req.Latitude)
@@ -170,18 +194,6 @@ func (h *SeichiHandler) RegisterSeichi(c echo.Context) error {
 	} else {
 		place = existingPlace
 		log.Printf("Using existing place: %v", place)
-	}
-
-	// 日本周辺の緯度経度の範囲を確認
-	if req.Latitude < 24.396308 || req.Latitude > 45.551483 {
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"error": "緯度の値が日本の範囲外です",
-		})
-	}
-	if req.Longitude < 122.93457 || req.Longitude > 153.986672 {
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"error": "経度の値が日本の範囲外です",
-		})
 	}
 
 	latitudeDecimal := new(decimal.Big).SetFloat64(req.Latitude)
@@ -675,4 +687,55 @@ func (h *SeichiHandler) GetRecentSeichies(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, response)
+}
+
+// 聖地詳細更新API
+func (h *SeichiHandler) UpdateSeichiDetail(c echo.Context) error {
+	ctx := c.Request().Context()
+	seichiID := c.Param("id")
+
+	// リクエストのバインド
+	var req struct {
+		Description string `json:"description"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "不正なリクエスト形式です")
+	}
+
+	// トランザクション開始
+	tx, err := h.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションの開始に失敗しました")
+	}
+	defer tx.Rollback()
+
+	// 聖地の取得
+	seichi, err := models.Seichies(
+		models.SeichiWhere.SeichiID.EQ(seichiID),
+	).One(ctx, tx)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return echo.NewHTTPError(http.StatusNotFound, "聖地が見つかりません")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "聖地の取得に失敗しました")
+	}
+
+	// 説明の更新
+	seichi.Comment = null.StringFrom(req.Description)
+	seichi.UpdatedAt = time.Now()
+
+	// 更新の実行
+	if _, err := seichi.Update(ctx, tx, boil.Infer()); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "聖地の更新に失敗しました")
+	}
+
+	// トランザクションのコミット
+	if err := tx.Commit(); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションのコミットに失敗しました")
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"message": "聖地の詳細を更新しました",
+		"seichi": seichi,
+	})
 }

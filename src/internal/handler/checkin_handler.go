@@ -55,49 +55,71 @@ func (h *CheckinHandler) GetUserCheckins(c echo.Context) error {
 }
 
 // ポイント計算ロジック
-func (h *CheckinHandler) calculatePoints(ctx echo.Context, userID uint, seichiID int) (int, int, error) {
+func (h *CheckinHandler) calculatePoints(c echo.Context, userID int, seichiID int) (int, int, error) {
+	ctx := c.Request().Context()
+	
 	// 基本ポイント
 	points := BasePoints
 
-	// 初回訪問ボーナスのチェック
-	exists, err := models.CheckinLogs(
+	// 最新のチェックインログを取得
+	lastCheckin, err := models.CheckinLogs(
 		qm.Where("user_id = ? AND seichi_id = ?", userID, seichiID),
-	).Exists(ctx.Request().Context(), h.DB)
-	if err != nil {
+		qm.OrderBy("created_at DESC"),
+		qm.Limit(1),
+	).One(ctx, h.DB)
+
+	if err != nil && err != sql.ErrNoRows {
 		return 0, 0, err
 	}
-	if !exists {
+
+	// 初回チェックインボーナス
+	if err == sql.ErrNoRows {
 		points += FirstVisitBonus
-		return points, FirstVisitStamp, nil
 	}
 
-	// 連続訪問ボーナスのチェック
-	yesterday := time.Now().AddDate(0, 0, -1)
-	hasConsecutiveVisit, err := models.CheckinLogs(
-		qm.Where("user_id = ? AND created_at >= ?", userID, yesterday),
-	).Exists(ctx.Request().Context(), h.DB)
+	// ポイントログの作成
+	pointLog := &models.PointLog{
+		UserID: userID,
+		Point: points,
+		Type: "checkin",
+		CreatedAt: time.Now(),
+	}
+
+	// トランザクション開始
+	tx, err := h.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, 0, err
 	}
-	if hasConsecutiveVisit {
-		points += ConsecutiveDaysBonus
+	defer tx.Rollback()
+
+	// ポイントログの保存
+	if err := pointLog.Insert(ctx, tx, boil.Infer()); err != nil {
+		return 0, 0, err
 	}
 
-	// 訪問回数に基づくスタンプの決定
-	visits, err := models.CheckinLogs(
-		qm.Where("user_id = ? AND seichi_id = ?", userID, seichiID),
-	).Count(ctx.Request().Context(), h.DB)
+	// ユーザーのポイントを更新
+	userPoint, err := models.Points(
+		models.PointWhere.UserID.EQ(userID),
+	).One(ctx, tx)
 	if err != nil {
 		return 0, 0, err
 	}
 
+	userPoint.CurrentPoint += points
+	if _, err := userPoint.Update(ctx, tx, boil.Infer()); err != nil {
+		return 0, 0, err
+	}
+
+	// トランザクションのコミット
+	if err := tx.Commit(); err != nil {
+		return 0, 0, err
+	}
+
+	// スタンプIDの決定
 	var stampID int
-	switch {
-	case visits == 4:
-		stampID = FiveVisitsStamp
-	case visits == 9:
-		stampID = TenVisitsStamp
-	default:
+	if err == sql.ErrNoRows {
+		stampID = FirstVisitStamp
+	} else {
 		stampID = 0
 	}
 
