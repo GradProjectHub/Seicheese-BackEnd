@@ -87,7 +87,7 @@ func main() {
 	router.RegisterGenreRoutes(e, genreHandler, authMiddleware)
 	router.RegisterSeichiRoutes(e, seichiHandler, authMiddleware)
 	router.RegisterContentRoutes(e, contentHandler, authMiddleware)
-	router.RegisterCheckinRoutes(e, checkinHandler, authClient)
+	router.RegisterCheckinRoutes(e, checkinHandler, authMiddleware)
 
 	// サーバー起動
 	port := os.Getenv("PORT")
