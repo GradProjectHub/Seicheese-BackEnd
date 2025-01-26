@@ -73,54 +73,38 @@ func (h *CheckinHandler) calculatePoints(c echo.Context, userID int, seichiID in
 	}
 
 	// 初回チェックインボーナス
-	if err == sql.ErrNoRows {
-		points += FirstVisitBonus
-	}
-
-	// ポイントログの作成
-	pointLog := &models.PointLog{
-		UserID: userID,
-		Point: points,
-		Type: "checkin",
-		CreatedAt: time.Now(),
-	}
-
-	// トランザクション開始
-	tx, err := h.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, 0, err
-	}
-	defer tx.Rollback()
-
-	// ポイントログの保存
-	if err := pointLog.Insert(ctx, tx, boil.Infer()); err != nil {
-		return 0, 0, err
-	}
-
-	// ユーザーのポイントを更新
-	userPoint, err := models.Points(
-		models.PointWhere.UserID.EQ(userID),
-	).One(ctx, tx)
-	if err != nil {
-		return 0, 0, err
-	}
-
-	userPoint.CurrentPoint += points
-	if _, err := userPoint.Update(ctx, tx, boil.Infer()); err != nil {
-		return 0, 0, err
-	}
-
-	// トランザクションのコミット
-	if err := tx.Commit(); err != nil {
-		return 0, 0, err
-	}
-
-	// スタンプIDの決定
 	var stampID int
 	if err == sql.ErrNoRows {
+		points += FirstVisitBonus
 		stampID = FirstVisitStamp
-	} else {
-		stampID = 0
+	}
+
+	// チェックイン回数を取得
+	checkinCount, err := models.CheckinLogs(
+		qm.Where("user_id = ? AND seichi_id = ?", userID, seichiID),
+	).Count(ctx, h.DB)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	// 5回訪問スタンプ
+	if checkinCount == 4 { // 現在のチェックインで5回目
+		stampID = FiveVisitsStamp
+		points += ConsecutiveDaysBonus
+	}
+
+	// 10回訪問スタンプ
+	if checkinCount == 9 { // 現在のチェックインで10回目
+		stampID = TenVisitsStamp
+		points += SpecialEventBonus
+	}
+
+	// 連続訪問ボーナスの確認
+	if lastCheckin != nil {
+		lastVisit := lastCheckin.CreatedAt
+		if time.Since(lastVisit) <= 24*time.Hour {
+			points += ConsecutiveDaysBonus
+		}
 	}
 
 	return points, stampID, nil
