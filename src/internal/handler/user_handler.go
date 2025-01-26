@@ -395,3 +395,34 @@ func (h *UserHandler) GetUserPoints(c echo.Context) error {
 		"points": point.CurrentPoint,
 	})
 }
+
+func (h *UserHandler) GetMe(c echo.Context) error {
+	ctx := c.Request().Context()
+	
+	// ミドルウェアからユーザーIDを取得
+	token := c.Get("token").(*auth.Token)
+	
+	// ユーザー情報の取得
+	user, err := models.Users(
+		models.UserWhere.FirebaseID.EQ(token.UID),
+	).One(ctx, h.DB)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return echo.NewHTTPError(http.StatusNotFound, "ユーザーが見つかりません")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の取得に失敗しました")
+	}
+	
+	// ポイント情報の取得
+	point, err := models.Points(
+		models.PointWhere.UserID.EQ(user.UserID),
+	).One(ctx, h.DB)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の取得に失敗しました")
+	}
+	
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"user": user,
+		"point": point,
+	})
+}
