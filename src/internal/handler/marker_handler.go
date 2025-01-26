@@ -24,37 +24,9 @@ func (h *MarkerHandler) GetMarkers(c echo.Context) error {
 		})
 	}
 
-	// ユーザー情報の取得
-	user, err := models.Users(
-		models.UserWhere.FirebaseID.EQ(uid),
-	).One(c.Request().Context(), h.DB)
-	if err != nil {
-		log.Printf("Error fetching user: %v", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "ユーザー情報の取得に失敗しました",
-		})
-	}
-
-	// ポイント情報の取得
-	point, err := models.Points(
-		models.PointWhere.UserID.EQ(user.UserID),
-	).One(c.Request().Context(), h.DB)
-	if err != nil && err != sql.ErrNoRows {
-		log.Printf("Error fetching points: %v", err)
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "ポイント情報の取得に失敗しました",
-		})
-	}
-
-	currentPoints := 0
-	if point != nil {
-		currentPoints = point.CurrentPoint
-	}
-
-	// 利用可能なマーカーの取得
+	// 全てのマーカーを取得（ポイント条件を無視）
 	markers, err := models.Markers(
-		qm.Where("required_points <= ?", currentPoints),
-		qm.OrderBy("required_points ASC"),
+		qm.OrderBy("id ASC"),
 	).All(c.Request().Context(), h.DB)
 	if err != nil {
 		log.Printf("Error fetching markers: %v", err)
