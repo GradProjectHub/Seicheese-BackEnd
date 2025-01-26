@@ -244,7 +244,9 @@ func (h *SeichiHandler) GetSeichies(c echo.Context) error {
 	// 表示範囲内のデータのみを取得
 	seichies, err := models.Seichies(
 		qm.Load("Content"),
+		qm.Load("Content.Genre"),  // Genreも読み込む
 		qm.Load("Place"),
+		qm.OrderBy("created_at DESC"),
 		qm.Limit(limit),
 		qm.Offset(offset),
 	).All(c.Request().Context(), h.DB)
@@ -280,6 +282,9 @@ func (h *SeichiHandler) GetSeichies(c echo.Context) error {
 		if seichi.R.Content != nil {
 			seichiResp.ContentName = seichi.R.Content.ContentName
 			seichiResp.GenreID = seichi.R.Content.GenreID
+			if seichi.R.Content.R.Genre != nil {
+				seichiResp.GenreName = seichi.R.Content.R.Genre.GenreName
+			}
 		}
 
 		response = append(response, seichiResp)
@@ -575,6 +580,7 @@ func (h *SeichiHandler) GetSeichiesInBounds(c echo.Context) error {
 	// 表示範囲内の聖地を取得
 	seichies, err := models.Seichies(
 		qm.Load("Content"),
+		qm.Load("Content.Genre"),  // Genreも読み込む
 		qm.Load("Place"),
 		qm.Where("CAST(latitude AS FLOAT) BETWEEN ? AND ? AND CAST(longitude AS FLOAT) BETWEEN ? AND ?",
 			swLat, neLat, swLng, neLng),
@@ -611,6 +617,9 @@ func (h *SeichiHandler) GetSeichiesInBounds(c echo.Context) error {
 		if seichi.R.Content != nil {
 			seichiResp.ContentName = seichi.R.Content.ContentName
 			seichiResp.GenreID = seichi.R.Content.GenreID
+			if seichi.R.Content.R.Genre != nil {
+				seichiResp.GenreName = seichi.R.Content.R.Genre.GenreName
+			}
 		}
 
 		response = append(response, seichiResp)
@@ -624,6 +633,7 @@ func (h *SeichiHandler) GetRecentSeichies(c echo.Context) error {
 	// 最新の10件を取得
 	seichies, err := models.Seichies(
 		qm.Load("Content"),
+		qm.Load("Content.Genre"),  // Genreも読み込む
 		qm.Load("Place"),
 		qm.OrderBy("created_at DESC"),
 		qm.Limit(10),
@@ -647,18 +657,18 @@ func (h *SeichiHandler) GetRecentSeichies(c echo.Context) error {
 			Latitude:    latitude,
 			Longitude:   longitude,
 			ContentID:   seichi.ContentID,
-			CreatedAt:   seichi.CreatedAt.Time,
-			UpdatedAt:   seichi.UpdatedAt.Time,
+			Address:     seichi.R.Place.Address,
+			PostalCode:  seichi.R.Place.ZipCode,
+			CreatedAt:   seichi.CreatedAt,
+			UpdatedAt:   seichi.UpdatedAt,
 		}
 
 		if seichi.R.Content != nil {
 			seichiResp.ContentName = seichi.R.Content.ContentName
 			seichiResp.GenreID = seichi.R.Content.GenreID
-		}
-
-		if seichi.R.Place != nil {
-			seichiResp.Address = seichi.R.Place.Address
-			seichiResp.PostalCode = seichi.R.Place.ZipCode
+			if seichi.R.Content.R.Genre != nil {
+				seichiResp.GenreName = seichi.R.Content.R.Genre.GenreName
+			}
 		}
 
 		response = append(response, seichiResp)
