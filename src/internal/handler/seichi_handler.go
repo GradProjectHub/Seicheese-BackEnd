@@ -503,12 +503,12 @@ func (h *SeichiHandler) SearchSeichies(c echo.Context) error {
 	// クエリパラメータの取得
 	query := c.QueryParam("q")
 	if query == "" {
-		return echo.NewHTTPError(http.StatusBadRequest, "検索キーワードが必要です")
+		return c.JSON(http.StatusOK, []SeichiResponse{}) // 空のクエリの場合は空配列を返す
 	}
 
-	// 検索クエリの最小文字数チェック
-	if len([]rune(query)) < 2 {
-		return echo.NewHTTPError(http.StatusBadRequest, "検索キーワードは2文字以上必要です")
+	// 検索クエリの最小文字数チェック（1文字以上）
+	if len([]rune(query)) < 1 {
+		return echo.NewHTTPError(http.StatusBadRequest, "検索キーワードを入力してください")
 	}
 
 	// SQLインジェクション対策のためにワイルドカードをエスケープ
@@ -523,10 +523,6 @@ func (h *SeichiHandler) SearchSeichies(c echo.Context) error {
 		qm.Load("Place"),
 		qm.Select(
 			"DISTINCT seichies.*",
-			"contents.content_name",
-			"genres.genre_name",
-			"places.address",
-			"places.zip_code",
 		),
 		qm.InnerJoin("contents on seichies.content_id = contents.content_id"),
 		qm.InnerJoin("genres on contents.genre_id = genres.genre_id"),
@@ -535,22 +531,27 @@ func (h *SeichiHandler) SearchSeichies(c echo.Context) error {
 			"seichies.seichi_name LIKE ? OR contents.content_name LIKE ? OR places.address LIKE ?",
 			searchPattern, searchPattern, searchPattern,
 		),
-		// 検索結果の並び順を改善
+		// 検索結果の並び順を改善（完全一致を優先）
 		qm.OrderBy(
 			"CASE " +
+				"WHEN seichies.seichi_name = ? THEN 0 " +
 				"WHEN seichies.seichi_name LIKE ? THEN 1 " +
-				"WHEN contents.content_name LIKE ? THEN 2 " +
-				"WHEN places.address LIKE ? THEN 3 " +
-				"ELSE 4 END, " +
+				"WHEN contents.content_name = ? THEN 2 " +
+				"WHEN contents.content_name LIKE ? THEN 3 " +
+				"WHEN places.address LIKE ? THEN 4 " +
+				"ELSE 5 END, " +
 				"seichies.created_at DESC",
-			query+"%", query+"%", query+"%",
+			query, query+"%", query, query+"%", query+"%",
 		),
-		qm.Limit(20),
+		qm.Limit(50), // 検索結果の上限を増やす
 	).All(ctx, h.DB)
 
 	if err != nil {
 		log.Printf("Failed to search seichies: %v, query: %s", err, query)
-		return echo.NewHTTPError(http.StatusInternalServerError, "聖地の検索に失敗しました")
+		if err == sql.ErrNoRows {
+			return c.JSON(http.StatusOK, []SeichiResponse{})
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "検索中にエラーが発生しました")
 	}
 
 	response := make([]SeichiResponse, 0, len(seichies))
