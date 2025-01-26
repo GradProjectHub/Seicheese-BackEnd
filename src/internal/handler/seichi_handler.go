@@ -506,6 +506,11 @@ func (h *SeichiHandler) SearchSeichies(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "検索キーワードが必要です")
 	}
 
+	// 検索クエリの最小文字数チェック
+	if len([]rune(query)) < 2 {
+		return echo.NewHTTPError(http.StatusBadRequest, "検索キーワードは2文字以上必要です")
+	}
+
 	// SQLインジェクション対策のためにワイルドカードをエスケープ
 	query = strings.ReplaceAll(query, "%", "\\%")
 	query = strings.ReplaceAll(query, "_", "\\_")
@@ -527,10 +532,19 @@ func (h *SeichiHandler) SearchSeichies(c echo.Context) error {
 		qm.InnerJoin("genres on contents.genre_id = genres.genre_id"),
 		qm.InnerJoin("places on seichies.place_id = places.place_id"),
 		qm.Where(
-			"(seichies.seichi_name LIKE ? OR contents.content_name LIKE ? OR places.address LIKE ?) AND LENGTH(?) >= 2",
-			searchPattern, searchPattern, searchPattern, query,
+			"seichies.seichi_name LIKE ? OR contents.content_name LIKE ? OR places.address LIKE ?",
+			searchPattern, searchPattern, searchPattern,
 		),
-		qm.OrderBy("seichies.created_at DESC"),
+		// 検索結果の並び順を改善
+		qm.OrderBy(
+			"CASE " +
+				"WHEN seichies.seichi_name LIKE ? THEN 1 " +
+				"WHEN contents.content_name LIKE ? THEN 2 " +
+				"WHEN places.address LIKE ? THEN 3 " +
+				"ELSE 4 END, " +
+				"seichies.created_at DESC",
+			query+"%", query+"%", query+"%",
+		),
 		qm.Limit(20),
 	).All(ctx, h.DB)
 
