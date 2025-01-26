@@ -129,9 +129,9 @@ func (h *CheckinHandler) Checkin(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		fmt.Printf("リクエストボディのバインドエラー: %v\n", err)
 		// エラー時はデフォルト値を使用
-		req.SeichiID = 11
-		req.Latitude = 35.1209584
-		req.Longitude = 136.911830
+		req.SeichiID = 12
+		req.Latitude = 35.250132
+		req.Longitude = 136.776236
 	}
 
 	fmt.Printf("リクエストボディ: %+v\n", req)
