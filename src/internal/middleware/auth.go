@@ -17,6 +17,8 @@ import (
 	"firebase.google.com/go/v4/auth"
 	"github.com/labstack/echo/v4"
 	"github.com/volatiletech/sqlboiler/v4/queries/qm"
+	"github.com/volatiletech/sqlboiler/v4/boil"
+	"github.com/volatiletech/null"
 )
 
 type AuthMiddleware struct {
@@ -36,6 +38,7 @@ func (m *AuthMiddleware) FirebaseAuthMiddleware() echo.MiddlewareFunc {
 		return func(c echo.Context) error {
 			token := c.Request().Header.Get("Authorization")
 			if token == "" {
+				log.Printf("認証トークンがありません")
 				return echo.NewHTTPError(http.StatusUnauthorized, "認証トークンがありません")
 			}
 
@@ -63,12 +66,19 @@ func (m *AuthMiddleware) FirebaseAuthMiddleware() echo.MiddlewareFunc {
 
 			if !exists {
 				log.Printf("ユーザーが存在しません: firebase_id=%s", tokenVerified.UID)
-				// /auth/signin エンドポイントへのアクセスは許可
-				if c.Path() != "/auth/signin" {
-					return echo.NewHTTPError(http.StatusUnauthorized, "ユーザーが登録されていません。再度サインインしてください。")
+				// 新規ユーザーを作成
+				now := time.Now()
+				newUser := &models.User{
+					FirebaseID: tokenVerified.UID,
+					CreatedAt:  null.TimeFrom(now),
+					UpdatedAt:  null.TimeFrom(now),
 				}
-			} else {
-				log.Printf("ユーザーが存在します: firebase_id=%s", tokenVerified.UID)
+
+				if err := newUser.Insert(c.Request().Context(), m.DB, boil.Infer()); err != nil {
+					log.Printf("新規ユーザー作成エラー: %v", err)
+					return echo.NewHTTPError(http.StatusInternalServerError, "ユーザーの作成に失敗しました")
+				}
+				log.Printf("新規ユーザーを作成しました: firebase_id=%s", tokenVerified.UID)
 			}
 
 			c.Set("firebase_token", idToken)
