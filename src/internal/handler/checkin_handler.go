@@ -118,11 +118,17 @@ func (h *CheckinHandler) Checkin(c echo.Context) error {
 	fmt.Printf("チェックインリクエスト - Method: %s, Path: %s\n", c.Request().Method, c.Request().URL.Path)
 	fmt.Printf("リクエストヘッダー: %+v\n", c.Request().Header)
 
-	// UIDの取得
-	uid := c.Get("uid").(string)
-	if uid == "" {
-		return echo.NewHTTPError(http.StatusBadRequest, map[string]string{
-			"message": "ユーザーIDが必要です",
+	// UIDの取得と検証
+	uidInterface := c.Get("uid")
+	if uidInterface == nil {
+		return echo.NewHTTPError(http.StatusUnauthorized, map[string]string{
+			"message": "認証が必要です",
+		})
+	}
+	uid, ok := uidInterface.(string)
+	if !ok || uid == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, map[string]string{
+			"message": "不正な認証情報です",
 		})
 	}
 
@@ -151,6 +157,7 @@ func (h *CheckinHandler) Checkin(c echo.Context) error {
 				"message": "指定された聖地が見つかりません",
 			})
 		}
+		fmt.Printf("聖地情報取得エラー: %v\n", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, map[string]string{
 			"message": "聖地情報の取得に失敗しました",
 		})
@@ -161,6 +168,12 @@ func (h *CheckinHandler) Checkin(c echo.Context) error {
 		models.UserWhere.FirebaseID.EQ(uid),
 	).One(ctx, h.DB)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			fmt.Printf("ユーザーが見つかりません: %v\n", err)
+			return echo.NewHTTPError(http.StatusUnauthorized, map[string]string{
+				"message": "ユーザーが見つかりません",
+			})
+		}
 		fmt.Printf("ユーザー情報取得エラー: %v\n", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, map[string]string{
 			"message": "ユーザー情報の取得に失敗しました",
@@ -170,10 +183,21 @@ func (h *CheckinHandler) Checkin(c echo.Context) error {
 	// ポイントとスタンプの計算
 	points, stampID, err := h.calculatePoints(c, user.UserID, req.SeichiID)
 	if err != nil {
+		fmt.Printf("ポイント計算エラー: %v\n", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, map[string]string{
 			"message": "ポイント計算に失敗しました",
 		})
 	}
+
+	// トランザクション開始
+	tx, err := h.DB.BeginTx(ctx, nil)
+	if err != nil {
+		fmt.Printf("トランザクション開始エラー: %v\n", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, map[string]string{
+			"message": "トランザクション開始に失敗しました",
+		})
+	}
+	defer tx.Rollback()
 
 	// チェックインログの作成
 	checkinLog := &models.CheckinLog{
@@ -182,17 +206,9 @@ func (h *CheckinHandler) Checkin(c echo.Context) error {
 		CreatedAt: time.Now(),
 	}
 
-	// トランザクション開始
-	tx, err := h.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, map[string]string{
-			"message": "トランザクション開始に失敗しました",
-		})
-	}
-	defer tx.Rollback()
-
 	// チェックインログの保存
 	if err := checkinLog.Insert(ctx, tx, boil.Infer()); err != nil {
+		fmt.Printf("チェックインログ保存エラー: %v\n", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, map[string]string{
 			"message": "チェックイン処理に失敗しました",
 		})
@@ -203,6 +219,7 @@ func (h *CheckinHandler) Checkin(c echo.Context) error {
 		models.PointWhere.UserID.EQ(user.UserID),
 	).One(ctx, tx)
 	if err != nil && err != sql.ErrNoRows {
+		fmt.Printf("ポイント情報取得エラー: %v\n", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, map[string]string{
 			"message": "ポイント情報の取得に失敗しました",
 		})
@@ -211,10 +228,11 @@ func (h *CheckinHandler) Checkin(c echo.Context) error {
 	// ポイントレコードが存在しない場合は新規作成
 	if err == sql.ErrNoRows {
 		userPoint = &models.Point{
-			UserID: user.UserID,
+			UserID:       user.UserID,
 			CurrentPoint: points,
 		}
 		if err := userPoint.Insert(ctx, tx, boil.Infer()); err != nil {
+			fmt.Printf("ポイント情報作成エラー: %v\n", err)
 			return echo.NewHTTPError(http.StatusInternalServerError, map[string]string{
 				"message": "ポイント情報の作成に失敗しました",
 			})
@@ -223,6 +241,7 @@ func (h *CheckinHandler) Checkin(c echo.Context) error {
 		// 既存のポイントを更新
 		userPoint.CurrentPoint += points
 		if _, err := userPoint.Update(ctx, tx, boil.Infer()); err != nil {
+			fmt.Printf("ポイント更新エラー: %v\n", err)
 			return echo.NewHTTPError(http.StatusInternalServerError, map[string]string{
 				"message": "ポイント更新に失敗しました",
 			})
@@ -231,19 +250,20 @@ func (h *CheckinHandler) Checkin(c echo.Context) error {
 
 	// トランザクションのコミット
 	if err := tx.Commit(); err != nil {
+		fmt.Printf("トランザクションコミットエラー: %v\n", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, map[string]string{
 			"message": "トランザクションのコミットに失敗しました",
 		})
 	}
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
+	return c.JSON(http.StatusCreated, map[string]interface{}{
 		"message": "チェックイン成功",
 		"checkin": map[string]interface{}{
-			"created_at": checkinLog.CreatedAt,
-			"user_id": checkinLog.UserID,
-			"seichi_id": checkinLog.SeichiID,
+			"created_at":    checkinLog.CreatedAt,
+			"user_id":      checkinLog.UserID,
+			"seichi_id":    checkinLog.SeichiID,
 			"points_earned": points,
-			"stamp_id": stampID,
+			"stamp_id":     stampID,
 		},
 		"total_points": userPoint.CurrentPoint,
 	})
