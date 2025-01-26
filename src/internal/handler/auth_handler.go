@@ -547,7 +547,15 @@ func (h *AuthHandler) DeleteUser(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "チェックインログの削除に失敗しました")
 	}
 
-	// 2. ポイント情報の削除
+	// 2. ポイントログの削除
+	if _, err := models.PointLogs(
+		models.PointLogWhere.UserID.EQ(user.UserID),
+	).DeleteAll(ctx, tx); err != nil {
+		log.Printf("ポイントログ削除エラー: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "ポイントログの削除に失敗しました")
+	}
+
+	// 3. ポイント情報の削除
 	if _, err := models.Points(
 		models.PointWhere.UserID.EQ(user.UserID),
 	).DeleteAll(ctx, tx); err != nil {
@@ -555,7 +563,7 @@ func (h *AuthHandler) DeleteUser(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の削除に失敗しました")
 	}
 
-	// 3. ユーザー情報の削除
+	// 4. ユーザー情報の削除
 	if _, err := user.Delete(ctx, tx); err != nil {
 		log.Printf("ユーザー削除エラー: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の削除に失敗しました")
