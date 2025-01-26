@@ -2,6 +2,7 @@ package handler
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -113,6 +114,10 @@ func (h *CheckinHandler) calculatePoints(c echo.Context, userID int, seichiID in
 func (h *CheckinHandler) Checkin(c echo.Context) error {
 	ctx := c.Request().Context()
 
+	// リクエストの詳細をログ出力
+	fmt.Printf("チェックインリクエスト - Method: %s, Path: %s\n", c.Request().Method, c.Request().URL.Path)
+	fmt.Printf("リクエストヘッダー: %+v\n", c.Request().Header)
+
 	// UIDの取得
 	uid := c.Get("uid").(string)
 	if uid == "" {
@@ -121,17 +126,23 @@ func (h *CheckinHandler) Checkin(c echo.Context) error {
 
 	// リクエストボディの解析
 	var req struct {
-		SeichiID int `json:"seichi_id"`
+		SeichiID  int     `json:"seichi_id"`
+		Latitude  float64 `json:"latitude"`
+		Longitude float64 `json:"longitude"`
 	}
 	if err := c.Bind(&req); err != nil {
+		fmt.Printf("リクエストボディのバインドエラー: %v\n", err)
 		return echo.NewHTTPError(http.StatusBadRequest, "不正なリクエスト形式")
 	}
+
+	fmt.Printf("リクエストボディ: %+v\n", req)
 
 	// ユーザー情報の取得
 	user, err := models.Users(
 		models.UserWhere.FirebaseID.EQ(uid),
 	).One(ctx, h.DB)
 	if err != nil {
+		fmt.Printf("ユーザー情報取得エラー: %v\n", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の取得に失敗")
 	}
 
