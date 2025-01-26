@@ -176,6 +176,14 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 	}
 	log.Printf("トークン検証成功: firebase_id=%s", verifiedToken.UID)
 
+	// トランザクション開始
+	tx, err := h.DB.BeginTx(ctx, nil)
+	if err != nil {
+		log.Printf("トランザクション開始エラー: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションの開始に失敗しました")
+	}
+	defer tx.Rollback()
+
 	// ユーザー情報の取得または作成
 	user, created, err := h.UserHandler.GetOrCreateUser(ctx, verifiedToken.UID)
 	if err != nil {
@@ -185,17 +193,18 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 
 	if created {
 		log.Printf("新規ユーザーを作成しました: user_id=%d", user.UserID)
-	} else {
-		log.Printf("既存ユーザーを取得しました: user_id=%d", user.UserID)
+		// 新規ユーザーには初期ポイントを付与
+		point := &models.Point{
+			UserID:       user.UserID,
+			CurrentPoint: 1000, // 新規登録ボーナス
+			CreatedAt:    time.Now(),
+			UpdatedAt:    time.Now(),
+		}
+		if err := point.Insert(ctx, tx, boil.Infer()); err != nil {
+			log.Printf("初期ポイント作成エラー: %v", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "初期ポイントの作成に失敗しました")
+		}
 	}
-
-	// トランザクション開始
-	tx, err := h.DB.BeginTx(ctx, nil)
-	if err != nil {
-		log.Printf("トランザクション開始エラー: %v", err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションの開始に失敗しました")
-	}
-	defer tx.Rollback()
 
 	// ポイント情報の取得
 	point, err := models.Points(
@@ -210,16 +219,29 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 	lastLoginDate := point.UpdatedAt.Truncate(24 * time.Hour)
 	today := time.Now().Truncate(24 * time.Hour)
 	
+	var pointsEarned int
 	if lastLoginDate.Before(today) {
 		// ログインポイントを付与（100ポイント）
-		point.CurrentPoint += 100
+		pointsEarned = 100
+		point.CurrentPoint += pointsEarned
 		point.UpdatedAt = time.Now()
 		
-		log.Printf("ログインポイント付与: user_id=%d, points=100, total=%d", user.UserID, point.CurrentPoint)
+		log.Printf("ログインポイント付与: user_id=%d, points=%d, total=%d", user.UserID, pointsEarned, point.CurrentPoint)
 		
 		if _, err := point.Update(ctx, tx, boil.Infer()); err != nil {
 			log.Printf("ポイント更新エラー: %v", err)
 			return echo.NewHTTPError(http.StatusInternalServerError, "ポイントの更新に失敗しました")
+		}
+
+		// ポイントログの記録
+		pointLog := &models.PointLog{
+			UserID:    user.UserID,
+			Point:     pointsEarned,
+			CreatedAt: time.Now(),
+		}
+		if err := pointLog.Insert(ctx, tx, boil.Infer()); err != nil {
+			log.Printf("ポイントログ作成エラー: %v", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "ポイントログの作成に失敗しました")
 		}
 	}
 
@@ -235,7 +257,8 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 			"user_id":    user.UserID,
 			"created_at": user.CreatedAt.Time,
 		},
-		"point": point,
+		"points_earned": pointsEarned,
+		"total_points": point.CurrentPoint,
 	})
 }
 
