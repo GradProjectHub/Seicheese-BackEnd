@@ -13,6 +13,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/volatiletech/sqlboiler/v4/boil"
 	"github.com/volatiletech/null/v8"
+	"github.com/volatiletech/sqlboiler/v4/qm"
 )
 
 type UserHandler struct {
@@ -352,7 +353,7 @@ func (h *UserHandler) GetOrCreateUser(ctx context.Context, firebaseID string) (*
 
 // ポイント取得API
 func (h *UserHandler) GetUserPoints(c echo.Context) error {
-	// Firebase UIDからユーザーを取得
+	ctx := c.Request().Context()
 	uid := c.Get("uid").(string)
 	if uid == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{
@@ -360,39 +361,69 @@ func (h *UserHandler) GetUserPoints(c echo.Context) error {
 		})
 	}
 
-	// Firebase UIDからユーザーを検索
+	// トランザクション開始
+	tx, err := h.DB.BeginTx(ctx, nil)
+	if err != nil {
+		log.Printf("トランザクション開始エラー: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションの開始に失敗しました")
+	}
+	defer tx.Rollback()
+
+	// ユーザー情報の取得
 	user, err := models.Users(
 		models.UserWhere.FirebaseID.EQ(uid),
-	).One(c.Request().Context(), h.DB)
+	).One(ctx, tx)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return c.JSON(http.StatusUnauthorized, map[string]string{
-				"error": "ユーザーが登録されていません。サインインが必要です。",
-			})
+			return echo.NewHTTPError(http.StatusNotFound, "ユーザーが見つかりません")
 		}
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "ユーザー情報の取得に失敗しました",
-		})
+		return echo.NewHTTPError(http.StatusInternalServerError, "ユーザー情報の取得に失敗しました")
 	}
 
 	// ポイント情報の取得
 	point, err := models.Points(
 		models.PointWhere.UserID.EQ(user.UserID),
-	).One(c.Request().Context(), h.DB)
+	).One(ctx, tx)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			// ポイントが存在しない場合は0を返す
-			return c.JSON(http.StatusOK, map[string]interface{}{
-				"points": 0,
-			})
+			// ポイントレコードが存在しない場合は新規作成
+			point = &models.Point{
+				UserID: user.UserID,
+				CurrentPoint: 0,
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+			}
+			if err := point.Insert(ctx, tx, boil.Infer()); err != nil {
+				log.Printf("ポイント情報作成エラー: %v", err)
+				return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の作成に失敗しました")
+			}
+		} else {
+			log.Printf("ポイント情報取得エラー: %v", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の取得に失敗しました")
 		}
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "ポイント情報の取得に失敗しました",
-		})
+	}
+
+	// ポイントログの取得（直近の履歴）
+	pointLogs, err := models.PointLogs(
+		models.PointLogWhere.UserID.EQ(user.UserID),
+		qm.OrderBy("created_at DESC"),
+		qm.Limit(10),
+	).All(ctx, tx)
+	if err != nil && err != sql.ErrNoRows {
+		log.Printf("ポイントログ取得エラー: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "ポイントログの取得に失敗しました")
+	}
+
+	// トランザクションのコミット
+	if err := tx.Commit(); err != nil {
+		log.Printf("トランザクションコミットエラー: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションのコミットに失敗しました")
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"points": point.CurrentPoint,
+		"current_points": point.CurrentPoint,
+		"point_logs": pointLogs,
+		"updated_at": point.UpdatedAt,
 	})
 }
 

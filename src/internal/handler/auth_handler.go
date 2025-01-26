@@ -216,11 +216,14 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 	}
 
 	// 最終ログイン日時を確認し、日付が変わっていればログインポイントを付与
-	lastLoginDate := point.UpdatedAt.Truncate(24 * time.Hour)
-	today := time.Now().Truncate(24 * time.Hour)
-	
+	lastLoginLog, err := models.PointLogs(
+		qm.Where("user_id = ?", user.UserID),
+		qm.OrderBy("created_at DESC"),
+		qm.Limit(1),
+	).One(ctx, tx)
+
 	var pointsEarned int
-	if lastLoginDate.Before(today) {
+	if err == sql.ErrNoRows || lastLoginLog.CreatedAt.Truncate(24*time.Hour).Before(time.Now().Truncate(24*time.Hour)) {
 		// ログインポイントを付与（100ポイント）
 		pointsEarned = 100
 		point.CurrentPoint += pointsEarned

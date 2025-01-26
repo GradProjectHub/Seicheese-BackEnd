@@ -66,6 +66,7 @@ func (h *ContentHandler) SearchContents(c echo.Context) error {
 	}
 
 	contents, err := models.Contents(
+		qm.Load("Genre"),  // ジャンル情報を読み込む
 		qm.Where("content_name LIKE ?", "%"+query+"%"),
 	).All(c.Request().Context(), h.DB)
 
@@ -79,5 +80,25 @@ func (h *ContentHandler) SearchContents(c echo.Context) error {
 		return c.JSON(http.StatusOK, []models.Content{}) // 検索結果が0件の場合も空配列
 	}
 
-	return c.JSON(http.StatusOK, contents)
+	// レスポンス用のデータを作成
+	var response []map[string]interface{}
+	for _, content := range contents {
+		contentData := map[string]interface{}{
+			"id":          content.ContentID,
+			"name":        content.ContentName,
+			"genre_id":    content.GenreID,
+			"genre_name":  "",  // デフォルト値
+			"created_at":  content.CreatedAt,
+			"updated_at":  content.UpdatedAt,
+		}
+		
+		// ジャンル名が取得できた場合は設定
+		if content.R != nil && content.R.Genre != nil {
+			contentData["genre_name"] = content.R.Genre.GenreName
+		}
+		
+		response = append(response, contentData)
+	}
+
+	return c.JSON(http.StatusOK, response)
 }
