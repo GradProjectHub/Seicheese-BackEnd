@@ -618,3 +618,51 @@ func (h *SeichiHandler) GetSeichiesInBounds(c echo.Context) error {
 
 	return c.JSON(http.StatusOK, response)
 }
+
+// 最近の聖地を取得するAPI
+func (h *SeichiHandler) GetRecentSeichies(c echo.Context) error {
+	// 最新の10件を取得
+	seichies, err := models.Seichies(
+		qm.Load("Content"),
+		qm.Load("Place"),
+		qm.OrderBy("created_at DESC"),
+		qm.Limit(10),
+	).All(c.Request().Context(), h.DB)
+
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "最近の聖地の取得に失敗しました",
+		})
+	}
+
+	var response []SeichiResponse
+	for _, seichi := range seichies {
+		latitude, _ := seichi.Latitude.Float64()
+		longitude, _ := seichi.Longitude.Float64()
+
+		seichiResp := SeichiResponse{
+			ID:          seichi.SeichiID,
+			Name:        seichi.SeichiName,
+			Description: seichi.Comment.String,
+			Latitude:    latitude,
+			Longitude:   longitude,
+			ContentID:   seichi.ContentID,
+			CreatedAt:   seichi.CreatedAt.Time,
+			UpdatedAt:   seichi.UpdatedAt.Time,
+		}
+
+		if seichi.R.Content != nil {
+			seichiResp.ContentName = seichi.R.Content.ContentName
+			seichiResp.GenreID = seichi.R.Content.GenreID
+		}
+
+		if seichi.R.Place != nil {
+			seichiResp.Address = seichi.R.Place.Address
+			seichiResp.PostalCode = seichi.R.Place.ZipCode
+		}
+
+		response = append(response, seichiResp)
+	}
+
+	return c.JSON(http.StatusOK, response)
+}

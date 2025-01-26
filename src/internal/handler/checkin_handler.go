@@ -196,3 +196,60 @@ func (h *CheckinHandler) Checkin(c echo.Context) error {
 		"total_points": userPoint.CurrentPoint,
 	})
 }
+
+// GetContentCheckins は作品ごとのチェックイン数を取得するハンドラー
+func (h *CheckinHandler) GetContentCheckins(c echo.Context) error {
+	ctx := c.Request().Context()
+	uid := c.Get("uid").(string)
+
+	// ユーザーの取得
+	user, err := models.Users(
+		models.UserWhere.FirebaseID.EQ(uid),
+	).One(ctx, h.DB)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{
+			"error": "ユーザーが見つかりません",
+		})
+	}
+
+	// 作品ごとのチェックイン数を取得
+	query := `
+		SELECT 
+			c.content_id,
+			c.content_name,
+			COUNT(DISTINCT ch.checkin_id) as checkin_count
+		FROM 
+			contents c
+			LEFT JOIN seichies s ON c.content_id = s.content_id
+			LEFT JOIN checkins ch ON s.seichi_id = ch.seichi_id AND ch.user_id = $1
+		GROUP BY 
+			c.content_id, c.content_name
+		ORDER BY 
+			c.content_id
+	`
+
+	rows, err := h.DB.QueryContext(ctx, query, user.UserID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "チェックイン数の取得に失敗しました",
+		})
+	}
+	defer rows.Close()
+
+	var results []map[string]interface{}
+	for rows.Next() {
+		var contentID int
+		var contentName string
+		var checkinCount int
+		if err := rows.Scan(&contentID, &contentName, &checkinCount); err != nil {
+			continue
+		}
+		results = append(results, map[string]interface{}{
+			"content_id": contentID,
+			"content_name": contentName,
+			"checkin_count": checkinCount,
+		})
+	}
+
+	return c.JSON(http.StatusOK, results)
+}
