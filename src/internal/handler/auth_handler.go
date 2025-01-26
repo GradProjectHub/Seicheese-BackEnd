@@ -189,13 +189,44 @@ func (h *AuthHandler) SignIn(c echo.Context) error {
 		log.Printf("既存ユーザーを取得しました: user_id=%d", user.UserID)
 	}
 
+	// トランザクション開始
+	tx, err := h.DB.BeginTx(ctx, nil)
+	if err != nil {
+		log.Printf("トランザクション開始エラー: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションの開始に失敗しました")
+	}
+	defer tx.Rollback()
+
 	// ポイント情報の取得
 	point, err := models.Points(
 		models.PointWhere.UserID.EQ(user.UserID),
-	).One(ctx, h.DB)
+	).One(ctx, tx)
 	if err != nil {
 		log.Printf("ポイント情報の取得に失敗: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, "ポイント情報の取得に失敗しました")
+	}
+
+	// 最終ログイン日時を確認し、日付が変わっていればログインポイントを付与
+	lastLoginDate := point.UpdatedAt.Truncate(24 * time.Hour)
+	today := time.Now().Truncate(24 * time.Hour)
+	
+	if lastLoginDate.Before(today) {
+		// ログインポイントを付与（100ポイント）
+		point.CurrentPoint += 100
+		point.UpdatedAt = time.Now()
+		
+		log.Printf("ログインポイント付与: user_id=%d, points=100, total=%d", user.UserID, point.CurrentPoint)
+		
+		if _, err := point.Update(ctx, tx, boil.Infer()); err != nil {
+			log.Printf("ポイント更新エラー: %v", err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "ポイントの更新に失敗しました")
+		}
+	}
+
+	// トランザクションのコミット
+	if err := tx.Commit(); err != nil {
+		log.Printf("トランザクションコミットエラー: %v", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "トランザクションのコミットに失敗しました")
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{

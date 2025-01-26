@@ -271,6 +271,14 @@ func (h *UserHandler) UpdateUserPoints(c echo.Context) error {
 func (h *UserHandler) CreateUser(ctx context.Context, firebaseID string) (*models.User, error) {
 	log.Printf("新規ユーザー作成開始: firebase_id=%s", firebaseID)
 
+	// トランザクション開始
+	tx, err := h.DB.BeginTx(ctx, nil)
+	if err != nil {
+		log.Printf("トランザクション開始エラー: %v", err)
+		return nil, fmt.Errorf("トランザクション開始に失敗しました: %v", err)
+	}
+	defer tx.Rollback()
+
 	// 新規ユーザーの作成
 	now := time.Now()
 	user := &models.User{
@@ -281,12 +289,36 @@ func (h *UserHandler) CreateUser(ctx context.Context, firebaseID string) (*model
 
 	log.Printf("新規ユーザー作成試行: firebase_id=%s", firebaseID)
 
-	if err := user.Insert(ctx, h.DB, boil.Infer()); err != nil {
+	if err := user.Insert(ctx, tx, boil.Infer()); err != nil {
 		log.Printf("ユーザー作成エラー: %v", err)
 		return nil, fmt.Errorf("ユーザーの登録に失敗しました: %v", err)
 	}
 
 	log.Printf("ユーザーを作成しました: user_id=%d, firebase_id=%s", user.UserID, user.FirebaseID)
+
+	// 初期ポイントの作成（新規登録ボーナス1000ポイント）
+	point := &models.Point{
+		UserID:       user.UserID,
+		CurrentPoint: 1000, // 新規登録ボーナス
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+
+	log.Printf("初期ポイント作成試行: user_id=%d", user.UserID)
+
+	if err := point.Insert(ctx, tx, boil.Infer()); err != nil {
+		log.Printf("初期ポイント作成エラー: %v", err)
+		return nil, fmt.Errorf("初期ポイントの作成に失敗しました: %v", err)
+	}
+
+	log.Printf("初期ポイントを作成しました: user_id=%d, points=%d", user.UserID, point.CurrentPoint)
+
+	// トランザクションのコミット
+	if err := tx.Commit(); err != nil {
+		log.Printf("トランザクションコミットエラー: %v", err)
+		return nil, fmt.Errorf("トランザクションのコミットに失敗しました: %v", err)
+	}
+
 	return user, nil
 }
 
